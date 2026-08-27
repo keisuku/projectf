@@ -5,8 +5,8 @@
 | Item | State | Note |
 |---|---|---|
 | Permanent DID | **CREATED** `did:key:z6Mk…9QDU` | Generated on the user's iPhone. Validated by upstream `didkey.public_key()`. |
-| Seed backup | **user-confirmed pending** | The one irreversible step. |
-| DID note published | NO | Blocked: Technocore unreachable from the agent. |
+| Seed backup | **DONE** (user-confirmed) | The one irreversible step, closed. |
+| DID note published | **YES** `/kv/did-64/776f70dbeec8e2` | Durable (notes have no ring). Verified by fetch. |
 | Signed check-in | NO | Blocked: same. URLs can be pre-built here. |
 | Signing toolkit | **DONE, and proven on-device** | The phone has no `cryptography`; the pure-Python fallback is what actually runs there. |
 | Testnet | **NOT STARTED** | No official start date. |

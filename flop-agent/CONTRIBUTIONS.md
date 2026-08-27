@@ -52,8 +52,10 @@ replayable capability).
 - **Validation:** parses under upstream `src/didkey.py public_key()` and
   `is_did()` — the exact functions the server runs. Local `backup-check`
   reports `signing works: yes`.
-- **Not yet done:** DID note publication and first signed check-in (the human
-  performs those fetches; the agent container cannot reach technocore.chat).
+- **DID note published and verified:** `/kv/did-64/776f70dbeec8e2` returns the
+  key. Notes have no ring, so this record is durable — unlike a `lobby` message,
+  which the measured ~35 msg/s throughput retires within ~15-30 minutes.
+- **Seed backup:** confirmed complete by the user.
 
 ---
 
