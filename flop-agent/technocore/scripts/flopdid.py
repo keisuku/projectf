@@ -168,6 +168,12 @@ def fingerprint(did: str) -> str:
     return hashlib.sha256(did.encode()).hexdigest()[:16]
 
 
+def is_did_like(value: str) -> bool:
+    """Shape check for a public did:key, with no key material involved. Mirrors
+    upstream DID_PATTERN in src/didkey.py."""
+    return bool(re.fullmatch(r"did:key:z6Mk[1-9A-HJ-NP-Za-km-z]{44}", value or ""))
+
+
 def note_path(did: str) -> str:
     fp = fingerprint(did)
     return f"did-{fp[:2]}/{fp[2:]}"

@@ -14,12 +14,21 @@ Two jobs, because they share a schedule and forgetting either is expensive:
    the org, the service's own manifest, or a new room on the discovery lane.
    This snapshots those and reports only what changed.
 
-Zero dependencies — stdlib only, so it runs in the same phone shell that holds
-the key. Nothing here reads the seed: the DID note lane is unsigned, so the
-public DID is all that is needed.
+Zero dependencies — stdlib only.
+
+**This tool never needs the private key.** The DID note lane is unsigned
+(signed note writes exist only for `room-owners` and `room-allow`), so a
+keepalive needs the *public* DID and nothing else. That is deliberate: the
+weekly refresh can therefore run anywhere — another machine, a cron job, a
+different agent — without the seed ever leaving the device that made it.
+
+Identity is resolved in this order:
+    $FLOP_DID  ->  --did  ->  identity/public/did.txt  ->  derived from the seed
+The seed is the last resort and is only ever used to compute the public DID.
 
 Usage:
     python3 flopwatch.py status              # days until the DID note is reaped
+    FLOP_DID=did:key:z6Mk... python3 flopwatch.py keepalive --write   # no seed needed
     python3 flopwatch.py keepalive           # print the refresh URL
     python3 flopwatch.py keepalive --write   # perform the refresh
     python3 flopwatch.py watch               # report changes since last run
@@ -127,18 +136,41 @@ def _signals_in(body: str) -> list[str]:
     return [s for s in SIGNALS if re.search(rf"\b{re.escape(s)}", low)]
 
 
+# --- identity ---------------------------------------------------------------
+def resolve_did(explicit: str | None = None) -> str:
+    """The public DID, preferring every source that is not the private key.
+
+    Reaching for the seed to learn a *public* value is a needless handling of
+    key material, and it is what would otherwise chain the weekly keepalive to
+    the one device holding it.
+    """
+    for candidate in (explicit, os.environ.get("FLOP_DID")):
+        if candidate:
+            did = candidate.strip()
+            if not flopdid.is_did_like(did):
+                raise SystemExit(f"not a valid did:key: {did!r}")
+            return did
+    published = flopdid.PUBLIC_DIR / "did.txt"
+    if published.exists():
+        did = published.read_text().strip()
+        if flopdid.is_did_like(did):
+            return did
+    return flopdid.did_from_pubkey(flopdid.PUBKEY(flopdid.load_seed()))
+
+
 # --- keepalive --------------------------------------------------------------
-def _did_note_url() -> tuple[str, str, str]:
-    did = flopdid.did_from_pubkey(flopdid.PUBKEY(flopdid.load_seed()))
+def _did_note_url(explicit: str | None = None) -> tuple[str, str, str]:
+    did = resolve_did(explicit)
     path = flopdid.note_path(did)
-    value = did
-    return did, path, f"{BASE}/kv/{path}/set/{urllib.parse.quote(value, safe='')}"
+    return did, path, f"{BASE}/kv/{path}/set/{urllib.parse.quote(did, safe='')}"
 
 
 def cmd_status(args) -> None:
     state = _load()
     last = state.get("keepalive_utc")
-    print(f"DID note   : /kv/{flopdid.note_path(flopdid.did_from_pubkey(flopdid.PUBKEY(flopdid.load_seed())))}")
+    did = resolve_did(getattr(args, "did", None))
+    print(f"DID        : {did}")
+    print(f"DID note   : /kv/{flopdid.note_path(did)}")
     if not last:
         print("last refresh: never recorded by this tool")
         print(f"ACTION      : refresh within {IDLE_DAYS} days of your last write, or it is reaped.")
@@ -155,7 +187,7 @@ def cmd_status(args) -> None:
 
 
 def cmd_keepalive(args) -> None:
-    did, path, url = _did_note_url()
+    did, path, url = _did_note_url(getattr(args, "did", None))
     if not args.write:
         print(f"DID note path : /kv/{path}")
         print("Fetch this to refresh it (resets the 7-day idle clock):")
@@ -234,16 +266,19 @@ def cmd_watch(args) -> None:
 
     if args.write_keepalive:
         print()
-        cmd_keepalive(argparse.Namespace(write=True))
+        cmd_keepalive(argparse.Namespace(write=True, did=getattr(args, "did", None)))
 
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ident = argparse.ArgumentParser(add_help=False)
+    ident.add_argument("--did", default=None,
+                       help="public did:key to keep alive (or set $FLOP_DID). No seed needed.")
     sub = p.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("status", help="days until the DID note is reaped")
-    k = sub.add_parser("keepalive", help="refresh the DID note")
+    sub.add_parser("status", parents=[ident], help="days until the DID note is reaped")
+    k = sub.add_parser("keepalive", parents=[ident], help="refresh the DID note")
     k.add_argument("--write", action="store_true", help="perform the fetch, not just print it")
-    w = sub.add_parser("watch", help="report changes on the announcement channels")
+    w = sub.add_parser("watch", parents=[ident], help="report changes on the announcement channels")
     w.add_argument("--write-keepalive", action="store_true", help="also refresh the DID note")
     args = p.parse_args()
     {"status": cmd_status, "keepalive": cmd_keepalive, "watch": cmd_watch}[args.cmd](args)
