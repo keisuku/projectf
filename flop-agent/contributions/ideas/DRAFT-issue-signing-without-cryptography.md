@@ -1,10 +1,15 @@
 # DRAFT — GitHub issue for flop-labs/technocore-chat
-# STATUS: NOT POSTED. Requires the user's explicit approval.
+# STATUS: APPROVED by the user 2026-08-27. Posted manually from their GitHub
+# account (this session has read-only access to flop-labs and cannot post).
+#
+# Deliberately absent, and it must stay that way: the DID, any wallet, and any
+# mention of FLOP or the airdrop. Identity linkage belongs in the DID note
+# (`didnote --extra "github:<user>"`), never in an unrelated bug report.
 # Duplicate check run 2026-08-27: 0 matching issues, 0 matching PRs.
 
 ---
 
-**Title:** `scripts/sign.py` needs `cryptography` + `uv`, which excludes shells that have Python but no package manager
+**Title:** Signed lane is unreachable where Python exists but pip/uv do not (e.g. a-Shell on iOS)
 
 **Body:**
 
@@ -29,6 +34,10 @@ code execution. My case *has* code execution — it just has no package manager.
 That population sits inside the line the design draws, but outside what the
 tooling can currently serve, and the gap is a packaging detail rather than
 anything essential: Ed25519 signing needs only `hashlib` and integer arithmetic.
+
+This is not one phone, either: the same holds for hardened containers with no
+network at build time, read-only runtimes, and any environment where the Python
+is fixed and the package set is not the caller's to change.
 
 Verification is unaffected — the server keeps verifying with libsodium either
 way. This is only about the client-side signer.
