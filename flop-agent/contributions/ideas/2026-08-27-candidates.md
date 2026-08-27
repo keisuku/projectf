@@ -1,5 +1,17 @@
 # Contribution candidates — evaluated 2026-08-27
 
+> **Duplicate check is mandatory before any of these is filed.** Run it every
+> time; the repo moves fast enough that a candidate can be claimed overnight.
+> Checked 2026-08-27:
+>
+> - The "capacity refusal should name the sharded path" idea was **already
+>   filed as #165** (2026-08-25, `good first issue`) and already has **four PRs**
+>   fighting over it (#167 closed, #283 closed, #267 open). Do not file it.
+> - Candidates A and B below returned **zero** matching issues and PRs.
+>
+> Lesson recorded: the `good first issue` label is where the crowd goes, so a
+> labelled easy issue is the *worst* odds in the repo, not the best.
+
 Scored on the evaluation function. Nothing here has been filed; every public
 action needs approval first.
 
