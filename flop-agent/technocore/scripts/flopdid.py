@@ -50,8 +50,27 @@ import urllib.parse
 from pathlib import Path
 
 # --- layout -----------------------------------------------------------------
+# The seed must land somewhere predictable whether this script sits inside the
+# repo or was downloaded on its own — a phone shell where cloning is awkward is
+# the case that matters, and a key written to a surprising path is a key that
+# gets lost.
 HERE = Path(__file__).resolve().parent
-AGENT_ROOT = HERE.parent.parent  # flop-agent/
+
+
+def _agent_root() -> Path:
+    """Where identity lives: $FLOP_AGENT_HOME, else the repo, else ~/.flop-agent."""
+    env = os.environ.get("FLOP_AGENT_HOME")
+    if env:
+        return Path(env).expanduser().resolve()
+    # Inside the repo checkout: .../flop-agent/technocore/scripts/flopdid.py
+    candidate = HERE.parent.parent
+    if candidate.name == "flop-agent" or (candidate / "STATUS.md").exists():
+        return candidate
+    # Downloaded standalone — never scatter a permanent key next to a script.
+    return Path.home() / ".flop-agent"
+
+
+AGENT_ROOT = _agent_root()
 SECRETS_DIR = AGENT_ROOT / "secrets"
 SEED_FILE = SECRETS_DIR / "did_seed.hex"
 NONCE_FILE = SECRETS_DIR / "nonce_state.json"

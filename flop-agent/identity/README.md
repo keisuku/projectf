@@ -4,14 +4,34 @@ One person. One permanent `did:key`. Never a second one.
 
 ## Create it (on YOUR device — takes ~10 seconds)
 
+No `pip install` needed — the pure-Python Ed25519 fallback means stock Python is
+enough. **A phone is fine**; nothing here requires a PC.
+
+### With the repo (PC, Termux, a-Shell — anywhere `git` works)
+
 ```bash
-git clone https://github.com/keisuku/projectf && cd projectf/flop-agent/technocore/scripts
+git clone -b claude/flop-participation-agent-bx8e7z https://github.com/keisuku/projectf
+cd projectf/flop-agent/technocore/scripts
 python3 flopdid.py selftest      # proves the crypto before it makes your key
 python3 flopdid.py keygen
 ```
 
-No `pip install` needed — there is a pure-Python Ed25519 fallback, so this works
-on a phone (Termux/iSH) or any bare Python 3.11+.
+### Without git (two files, works on any phone shell)
+
+```bash
+B=https://raw.githubusercontent.com/keisuku/projectf/claude/flop-participation-agent-bx8e7z/flop-agent/technocore/scripts
+curl -O $B/flopdid.py -O $B/ed25519_pure.py
+python3 flopdid.py selftest
+python3 flopdid.py keygen
+```
+
+### Where the key is stored
+
+- Inside the repo checkout → `flop-agent/secrets/`
+- Downloaded standalone → `~/.flop-agent/secrets/` (never beside the script)
+- Override either with `$FLOP_AGENT_HOME`
+
+`keygen` tells you the exact path it used.
 
 `keygen` prints your **DID only**. The seed is written straight to
 `flop-agent/secrets/did_seed.hex` at mode 600 and is never printed, never logged,

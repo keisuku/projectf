@@ -22,14 +22,17 @@ verifiable record of it, and readiness for testnet day 1.
 ## The one thing to do first
 
 ```bash
-cd flop-agent/technocore/scripts
+git clone -b claude/flop-participation-agent-bx8e7z https://github.com/keisuku/projectf
+cd projectf/flop-agent/technocore/scripts
 python3 flopdid.py selftest    # verify the crypto before it makes your key
 python3 flopdid.py keygen      # prints your DID; the seed is never printed
 ```
 
-Then **back up `flop-agent/secrets/did_seed.hex`**. It cannot be regenerated.
+Then **back up the seed file** at the path `keygen` reports. It cannot be
+regenerated.
 
-Runs on stock Python 3.11+ with no packages installed.
+Runs on stock Python 3.11+ with no packages installed — **a phone shell is
+enough**. See `identity/README.md` for the git-free two-file install.
 
 ## Security posture
 
