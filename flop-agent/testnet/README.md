@@ -13,13 +13,14 @@ more than every day before it combined.
 
 | | Item | State |
 |---|---|---|
-| ☐ | Permanent DID exists | **pending — human** |
-| ☐ | Seed backed up | **pending — human** |
+| ☑ | Permanent DID exists | `did:key:z6Mk…9QDU` |
+| ☑ | Seed backed up | user-confirmed |
 | ☑ | Signer works, verified against upstream | done |
 | ☑ | Runs with no dependencies (phone-capable) | done |
 | ☑ | Nonce monotonicity handled | done |
-| ☐ | DID note published | blocked (egress) |
-| ☐ | Watch established for faucet/testnet announcements | see below |
+| ☑ | DID note published | `/kv/did-64/776f70dbeec8e2`, verified |
+| ☐ | **Weekly keepalive** — the note is reaped after 7 idle days | `flopwatch.py watch --write-keepalive` |
+| ☑ | Watch established for faucet/testnet announcements | `technocore/scripts/flopwatch.py` |
 
 ## Trigger conditions for TESTNET DAY-1 MODE
 

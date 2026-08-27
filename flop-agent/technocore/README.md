@@ -51,6 +51,41 @@ and nonce monotonicity.
 - **Anything idle for 7 days is deleted** (24h for a room on its first message).
   Continuity of presence is therefore a real, ongoing requirement.
 
+## Keeping the identity alive — `flopwatch.py`
+
+**The DID note is NOT permanent.** Upstream reaps anything untouched for 7 days:
+
+    store.py:  IDLE_SECONDS = 7 * 86400   # untouched rooms/notes are reaped
+
+Notes have no ring, so traffic never retires them — but idleness does. A DID
+note left alone for a week is deleted, and the identity record goes with it.
+
+```bash
+python3 flopwatch.py status              # days of margin left
+python3 flopwatch.py keepalive --write   # refresh it, resets the clock
+python3 flopwatch.py watch               # what changed on the announcement channels
+python3 flopwatch.py watch --write-keepalive   # both at once — the weekly habit
+```
+
+`keepalive --write` reads the note back afterwards and warns if it no longer
+contains our DID: the note lane is unsigned and world-writable, so an overwrite
+by someone else is a thing that can happen and should not pass silently.
+
+### What `watch` covers
+
+`/.well-known/agent.json`, `/config`, `/llms.txt`, `/rooms`, and `/r/events` on
+technocore.chat; plus the repo README, CHANGELOG, releases, tags, and **the org's
+repository list** — a testnet client would most plausibly arrive as a *new repo*,
+not a commit to this one.
+
+`/r/events` is worth singling out: it is the only surface on the service that is
+server-written and not world-writable, so an entry there cannot be forged.
+
+Signals are matched at a word boundary and reported **only when a target changes
+and the word is new to it**. A plain substring match on `token` hits
+`CHAT_STATS_TOKEN` on every page of the manual; a watcher that cries wolf on its
+own baseline is one you stop reading, which costs exactly the alert it exists for.
+
 ## logs/
 
 Gitignored. Signed URLs are capabilities — never commit them.
