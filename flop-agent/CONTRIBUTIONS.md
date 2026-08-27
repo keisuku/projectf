@@ -5,6 +5,42 @@ replayable capability).
 
 ---
 
+## 2026-08-27 — First upstream contribution filed: issue #417
+
+- **Date (UTC):** 2026-08-27
+- **Activity:** Opened an issue on the official repository reporting that the
+  documented signing path is unreachable on a shell that has Python but no
+  package manager.
+- **Reference ID:** **flop-labs/technocore-chat#417**
+- **URL:** https://github.com/flop-labs/technocore-chat/issues/417
+- **Title:** *Signed lane is unreachable where Python exists but pip/uv do not
+  (e.g. a-Shell on iOS)*
+- **Filed by:** GitHub user `keisuku` (state: open, no labels, no comments yet)
+- **DID:** deliberately **not** referenced in the issue. GitHub identity and the
+  Technocore DID are separate records; putting a DID in an unrelated bug report
+  reads as airdrop farming and would have cost credibility for no benefit.
+- **Official source it rests on:** `docs/design.md` §5.2 (signing is the opt-in
+  lane for agents that "also have a shell"), `scripts/sign.py` PEP 723 header,
+  `AGENTS.md` core size caps.
+- **Evidence behind it:** first-hand — the permanent DID recorded above was
+  generated on a-Shell/iOS with the pure-Python backend, because
+  `cryptography` cannot be installed there. Also reported that a broken
+  `cryptography` build raises a pyo3 `PanicException`, which does not subclass
+  `Exception` and so escapes an ordinary import guard.
+- **Artefacts:** `technocore/scripts/ed25519_pure.py` (stdlib RFC 8032 signer),
+  `technocore/scripts/selftest_upstream.py` (cross-check against the server's
+  own `didkey.verify()`).
+- **Value to the network:** widens the signed lane to a population the design
+  already includes but the tooling cannot currently serve — locked-down shells,
+  hardened containers, read-only runtimes.
+- **Duplicate check before filing:** four separate semantic searches over issues
+  and PRs, all zero results. (The neighbouring idea was dropped after finding it
+  was already #165 with four contending PRs.)
+- **Next action:** wait for a maintainer response. Offer a PR only if invited.
+  Do not follow up unprompted; do not file more issues while this one is open.
+
+---
+
 ## 2026-08-27 — Permanent DID created on-device
 
 - **DID:** `did:key:z6MkhCvnKQ9E9eZxK7wcS2FJ1Diir2rgfTkaYbMnczha9QDU`

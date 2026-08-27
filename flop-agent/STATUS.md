@@ -11,7 +11,7 @@
 | Signing toolkit | **DONE, and proven on-device** | The phone has no `cryptography`; the pure-Python fallback is what actually runs there. |
 | Testnet | **NOT STARTED** | No official start date. |
 | Miner / validator | Deferred | No specs published. |
-| GitHub contribution | Candidates identified, none filed | Approval required before filing. |
+| GitHub contribution | **#417 filed, open** | First upstream contribution. Awaiting maintainer response. |
 
 ## Why the DID was not generated in this container
 
