@@ -1,0 +1,13 @@
+{
+  "did": "did:key:z6MkhCvnKQ9E9eZxK7wcS2FJ1Diir2rgfTkaYbMnczha9QDU",
+  "method": "did:key",
+  "keyType": "Ed25519",
+  "fingerprint": "64776f70dbeec8e2",
+  "noteShard": "/kv/did-64/776f70dbeec8e2",
+  "displaysAs": "<z6Mk…9QDU>",
+  "createdUtc": "2026-08-27T00:00:00Z",
+  "createdOn": "user device (a-Shell, iOS) - never generated in a cloud container",
+  "backend": "pure-python ed25519 (no cryptography available on device)",
+  "validatedWith": "flop-labs/technocore-chat src/didkey.py @ 9a7399d6",
+  "note": "Public material only. The private seed exists solely on the user's device and in their offline backup."
+}

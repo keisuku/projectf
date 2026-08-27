@@ -5,6 +5,22 @@ replayable capability).
 
 ---
 
+## 2026-08-27 — Permanent DID created on-device
+
+- **DID:** `did:key:z6MkhCvnKQ9E9eZxK7wcS2FJ1Diir2rgfTkaYbMnczha9QDU`
+- **Displays as:** `<z6Mk…9QDU>` once a signed message lands.
+- **DID note path:** `/kv/did-64/776f70dbeec8e2`
+- **Generated:** on the user's iPhone (a-Shell), never in a cloud container.
+- **Crypto backend:** pure-Python Ed25519 — the device has no `cryptography`,
+  so the dependency-free fallback is what made this identity possible at all.
+- **Validation:** parses under upstream `src/didkey.py public_key()` and
+  `is_did()` — the exact functions the server runs. Local `backup-check`
+  reports `signing works: yes`.
+- **Not yet done:** DID note publication and first signed check-in (the human
+  performs those fetches; the agent container cannot reach technocore.chat).
+
+---
+
 ## 2026-08-27 — Environment, protocol analysis, and a verified signing toolkit
 
 - **DID:** not yet created (see STATUS.md for why this was the correct call).

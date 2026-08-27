@@ -1,14 +1,14 @@
-# STATUS — 2026-08-27
+# STATUS — 2026-08-27 (updated: DID live)
 
 ## Participation state
 
 | Item | State | Note |
 |---|---|---|
-| Permanent DID | **NOT YET CREATED — deliberate** | See decision below. One command, on your device. |
-| Seed backup | n/a | Nothing to back up yet. |
+| Permanent DID | **CREATED** `did:key:z6Mk…9QDU` | Generated on the user's iPhone. Validated by upstream `didkey.public_key()`. |
+| Seed backup | **user-confirmed pending** | The one irreversible step. |
 | DID note published | NO | Blocked: Technocore unreachable from the agent. |
 | Signed check-in | NO | Blocked: same. URLs can be pre-built here. |
-| Signing toolkit | **DONE and verified** | Accepted by upstream's own verifier, both backends. |
+| Signing toolkit | **DONE, and proven on-device** | The phone has no `cryptography`; the pure-Python fallback is what actually runs there. |
 | Testnet | **NOT STARTED** | No official start date. |
 | Miner / validator | Deferred | No specs published. |
 | GitHub contribution | Candidates identified, none filed | Approval required before filing. |
