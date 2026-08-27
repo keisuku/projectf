@@ -67,7 +67,20 @@ def _agent_root() -> Path:
     if candidate.name == "flop-agent" or (candidate / "STATUS.md").exists():
         return candidate
     # Downloaded standalone — never scatter a permanent key next to a script.
-    return Path.home() / ".flop-agent"
+    # Home is preferred over the working directory so that running the script
+    # from a different folder cannot silently mint a SECOND identity.
+    home = Path.home() / ".flop-agent"
+    try:
+        (home / "secrets").mkdir(parents=True, exist_ok=True)
+        probe = home / "secrets" / ".writable"
+        probe.touch()
+        probe.unlink()
+        return home
+    except OSError:
+        # Sandboxed shells (a-Shell, some iOS/Android apps) can hand back a home
+        # that is not writable. Fall back to the working directory rather than
+        # failing, and keep the name undotted so it is visible in a file browser.
+        return Path.cwd() / "flop-agent"
 
 
 AGENT_ROOT = _agent_root()
