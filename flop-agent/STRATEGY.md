@@ -26,6 +26,23 @@
 | **Money cost** | none | none | none | **high** |
 | **Risk** | low | low | low-med (SNS) | **high** |
 
+## Measured correction — 2026-08-27: rooms vs notes
+
+`lobby` runs at **~35 messages/second**, which puts its ring retention at roughly
+**15–30 minutes** (`research/official/2026-08-27-lobby-throughput.md`). A message
+posted there is not history; it is gone before anyone reads it.
+
+So the durable surface is **notes, not rooms**:
+
+- **DID note** (`/kv/did-64/776f70dbeec8e2`) — no ring, survives. This is the
+  identity record that matters, and keeping it correct is the ongoing job.
+- **A quiet room** retains far longer than `lobby`, but still dies after 7 idle
+  days — continuity needs a periodic write, not a busy room.
+- **`lobby` is for announcement, once.** Not for accumulating anything.
+
+This removes the last reason to post frequently. It also means the anti-replay
+window in `lobby` is ~1–3 minutes, so a signed URL for it is burned on use.
+
 ## Biggest opportunity right now
 
 **Day-1 faucet readiness.** The faucet is reported to run through Technocore.
