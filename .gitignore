@@ -1,0 +1,41 @@
+# ---------------------------------------------------------------
+# SECRETS — never commit. Deny-by-default for key material.
+# ---------------------------------------------------------------
+secrets/
+**/secrets/
+*.key
+*.pem
+*.seed
+*seed*.hex
+*.priv
+*private*
+.env
+.env.*
+!.env.example
+credentials*
+*credential*
+*token*
+*.p12
+*.pfx
+id_ed25519*
+id_rsa*
+
+# Local agent state that may embed identifiers/nonces
+**/state/
+*.local.json
+nonce.json
+
+# Logs (may contain full signed URLs = replayable capability URLs)
+**/logs/*
+!**/logs/.gitkeep
+
+# Third-party checkouts (read-only reference, not ours to vendor)
+vendor/
+
+# Noise
+__pycache__/
+*.pyc
+.venv/
+venv/
+.uvcache/
+.DS_Store
