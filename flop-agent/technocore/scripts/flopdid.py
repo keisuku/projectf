@@ -30,6 +30,7 @@ Usage:
     python3 flopdid.py did               # print the public DID
     python3 flopdid.py fingerprint       # print the DID-note shard path
     python3 flopdid.py say <room> <text> # print the signed write URL
+    python3 flopdid.py where             # print the exact seed path (and if it exists)
     python3 flopdid.py backup-check      # confirm the seed is readable + valid
     python3 flopdid.py selftest          # verify crypto against known vectors
 """
@@ -260,11 +261,13 @@ def cmd_keygen(args) -> None:
     os.chmod(SEED_FILE, 0o600)
     did = did_from_pubkey(PUBKEY(seed))
     _write_public(did)
+    print("=" * 60)
     print("Permanent identity created.")
     print(f"  DID         : {did}")
     print(f"  note shard  : /kv/{note_path(did)}")
     print(f"  seed stored : {SEED_FILE}  (mode 600, gitignored, NOT printed)")
     print()
+    print("=" * 60)
     print("BACK THE SEED UP NOW — it cannot be regenerated and the DID dies with it.")
     print(f"  Copy the file itself: {SEED_FILE}")
     print("  Store it in a password manager or offline. Never paste it into a chat or a repo.")
@@ -406,6 +409,22 @@ def cmd_checkin(args) -> None:
     _emit(build_say(seed, args.room, args.text, args.base), args)
 
 
+def cmd_where(args) -> None:
+    """Print the resolved paths. The seed location depends on how the script was
+    installed, so guessing it from documentation is how a key gets lost."""
+    print(f"identity home : {AGENT_ROOT}")
+    print(f"seed file     : {SEED_FILE}")
+    print(f"  exists      : {SEED_FILE.exists()}")
+    print(f"nonce state   : {NONCE_FILE}")
+    print(f"public dir    : {PUBLIC_DIR}")
+    if not SEED_FILE.exists():
+        print()
+        print("No key yet. Create one with:  python3 flopdid.py keygen")
+    else:
+        print()
+        print(f"Back it up by copying:  cat {SEED_FILE}")
+
+
 def cmd_backup_check(args) -> None:
     """Confirm the stored seed is present, well-formed, and yields the DID we
     published — without ever revealing it."""
@@ -509,6 +528,7 @@ def main() -> None:
         "--force", action="store_true", help="overwrite an existing key")
     sub.add_parser("did", parents=[common], help="print the public DID")
     sub.add_parser("fingerprint", parents=[common], help="print the DID note shard path")
+    sub.add_parser("where", parents=[common], help="print the resolved seed/identity paths")
     sub.add_parser("backup-check", parents=[common], help="verify the seed without revealing it")
     sub.add_parser("selftest", parents=[common], help="verify crypto against RFC 8032 vectors")
 
@@ -536,6 +556,7 @@ def main() -> None:
         "keygen": cmd_keygen, "did": cmd_did, "fingerprint": cmd_fingerprint,
         "say": cmd_say, "set": cmd_set, "backup-check": cmd_backup_check,
         "selftest": cmd_selftest, "didnote": cmd_didnote, "checkin": cmd_checkin,
+        "where": cmd_where,
     }[args.cmd](args)
 
 
