@@ -39,6 +39,32 @@ replayable capability).
 - **Next action:** wait for a maintainer response. Offer a PR only if invited.
   Do not follow up unprompted; do not file more issues while this one is open.
 
+### 2026-08-28 — verified review posted on #417, test ready
+
+Posted a comment on #417 stating, with every claim run locally first:
+
+- #433 already implements the issue, verified against RFC 8032 vectors, 300
+  randomised cross-checks byte-identical to `cryptography`, and acceptance by
+  PyNaCl (the server's own verifier).
+- Its guards are sound on both the import and use-time paths.
+- `@antfleet-ops` asked to build a second implementation; told them it would
+  duplicate #433 rather than help.
+- One real gap remains: the new *signing* backend has no oracle test, where the
+  repo's own `tests/unit/test_didkey_backends.py` set that standard for the
+  verification lane.
+
+**Deliverable is written and green, awaiting only a placement answer:**
+`tests/unit/test_signer_backends.py` (kept at
+`contributions/tools/test_signer_backends.py`). One new file, no production
+code. On top of `pull/433/head`: ruff check, ruff format --check, ty check,
+pytest (464 passed), sz.py --check unchanged.
+
+Offered it as a patch onto #433's branch or as a follow-up after it merges —
+author's choice, deliberately not as a rival PR.
+
+**Next action:** open the PR the moment `@Aphelios01-sdk` or `@sv` says which
+shape. No further comments until then.
+
 ### 2026-08-28 — a wrong claim of ours, caught by our own test
 
 The #417 comment raised two gaps in #433. **The second was wrong.**

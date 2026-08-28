@@ -11,7 +11,8 @@
 | Signing toolkit | **DONE, and proven on-device** | The phone has no `cryptography`; the pure-Python fallback is what actually runs there. |
 | Testnet | **NOT STARTED** | No official start date. |
 | Miner / validator | Deferred | No specs published. |
-| GitHub contribution | **#417 filed, open** | First upstream contribution. Awaiting maintainer response. |
+| GitHub contribution | **#417 open; review posted; test ready** | PR opens as soon as #433's author or the maintainer picks a shape. |
+| DID note keepalive | **DUE ~2026-09-03** | Reaped after 7 idle days. `flopwatch.py watch --write-keepalive`. |
 
 ## Why the DID was not generated in this container
 
