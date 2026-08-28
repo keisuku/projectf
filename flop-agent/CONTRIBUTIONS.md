@@ -39,6 +39,50 @@ replayable capability).
 - **Next action:** wait for a maintainer response. Offer a PR only if invited.
   Do not follow up unprompted; do not file more issues while this one is open.
 
+### 2026-08-28 — #417 CLOSED OUT: contribution landed and credited by name
+
+**Outcome: the finding, the verification and the test design all shipped, and the
+account is credited by name in the PR that carries them.**
+
+`Aphelios01-sdk` added commit **`89b0e89` "test: add an Ed25519 backend oracle"**
+to #433 — `tests/unit/test_signer_backends.py`, the filename and the design from
+our review — and wrote in the PR body:
+
+> @keisuku for the independent verification of the fallback and for identifying
+> the missing differential/oracle test. The recommendation led directly to commit
+> 89b0e89 and tests/unit/test_signer_backends.py.
+
+`antfleet-ops` **stood down from a duplicate PR**, citing our comment:
+
+> keisuku's independent byte-for-byte verification against cryptography/PyNaCl is
+> the evidence this needs. We'll stand down rather than add a second
+> implementation — a duplicate here would just cost review, as keisuku notes.
+
+Their version was verified here (checked out `pull/433/head`, ran it): 2 tests
+pass, full suite 463 pass. It **covers everything ours did and more** — 200
+randomised cases, all-zero/all-0xff seeds, seed-rejection parity, *plus* passing
+each signature through the server's `didkey.verify` and using CJK/emoji payloads.
+
+**So there is nothing left to place.** `antfleet-ops` wrote "it's keisuku's to
+place" without having seen `89b0e89`, which landed 44 minutes earlier. Opening a
+PR now would duplicate a committed test. Our copy stays at
+`contributions/tools/test_signer_backends.py` as the record of what was proposed.
+
+**What this contribution actually produced, in order:**
+
+1. Identified a real defect in the documented signing path, from first-hand use.
+2. Independently verified a stranger's crypto implementation against RFC 8032,
+   `cryptography` and PyNaCl before commenting on it.
+3. Withdrew our own incorrect claim within minutes of our own test disproving it.
+4. Identified the one real remaining gap, grounded in the repo's own stated
+   standard, and had it written before saying so.
+5. Prevented a duplicate PR, which the would-be author confirmed in writing.
+
+Named credit in the PR body is the durable artefact. Implementation authorship
+went to #433's author — the cost of the delay recorded in STRATEGY.md.
+
+**#417 is done. No further comments on it beyond one closing note.**
+
 ### 2026-08-28 — verified review posted on #417, test ready
 
 Posted a comment on #417 stating, with every claim run locally first:
