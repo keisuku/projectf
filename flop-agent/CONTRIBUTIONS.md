@@ -39,6 +39,34 @@ replayable capability).
 - **Next action:** wait for a maintainer response. Offer a PR only if invited.
   Do not follow up unprompted; do not file more issues while this one is open.
 
+### 2026-08-28 — a wrong claim of ours, caught by our own test
+
+The #417 comment raised two gaps in #433. **The second was wrong.**
+`scripts/sign.py::_new_key()` already wraps `from_private_bytes` in a
+`BaseException` guard and falls back, so the import-then-fail case was already
+handled; that function was missed when reading the diff.
+
+How it surfaced: the "failing-first" test written to prove the gap **passed
+against unmodified #433**. A test that passes without the fix is not evidence of
+a bug — it is evidence there is none. The guard was reverted and the claim
+withdrawn rather than defended.
+
+Cost: a public, incorrect technical claim on someone else's PR. Credibility is
+the entire asset this project is accumulating, so the correction goes out
+promptly and plainly.
+
+**The first gap is real and now implemented:**
+`tests/unit/test_signer_backends.py` — 200 randomised key/message pairs signed
+with both backends, asserted byte-identical (Ed25519 signing is deterministic,
+so exact equality is available and is stronger than "both verify"), plus
+seed-rejection parity and the all-zero/all-0xff edges, all compared against
+`cryptography` as an oracle. Justified by the repo's own
+`tests/unit/test_didkey_backends.py`, which set that standard for the
+verification lane.
+
+Verified on top of `pull/433/head`: `ruff check`, `ruff format --check`,
+`ty check`, `pytest tests` (**464 passed**), `sz.py --check` unchanged.
+
 ### 2026-08-28 — PR #433 implements #417 (someone else)
 
 `Aphelios01-sdk` opened **PR #433**, "feat(scripts): add stdlib Ed25519 signing
