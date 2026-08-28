@@ -39,6 +39,33 @@ replayable capability).
 - **Next action:** wait for a maintainer response. Offer a PR only if invited.
   Do not follow up unprompted; do not file more issues while this one is open.
 
+### 2026-08-28 — PR #433 implements #417 (someone else)
+
+`Aphelios01-sdk` opened **PR #433**, "feat(scripts): add stdlib Ed25519 signing
+fallback — Closes #417" (open, not merged). It adds `scripts/stdlib_ed25519.py`
+and a backend selector in `scripts/sign.py`.
+
+**Independently verified here before forming any opinion** (fetched
+`pull/433/head`, ran the code):
+
+- RFC 8032 §7.1 vectors 1-3: **pass**.
+- 300 randomized messages: signatures **byte-identical to `cryptography`**, and
+  **PyNaCl — the server's own verifier — accepts every one**.
+- Edge cases (31-byte seed rejected, all-zero seed, all-0xff seed): pass.
+- It handles the `BaseException` point this issue raised, and improves on it by
+  re-raising `KeyboardInterrupt`/`SystemExit`/`GeneratorExit`.
+
+**Their crypto is correct.** A vector-4 failure in the first local run was
+traced to a transcription error in *our* test data, not to their code —
+confirmed by diffing both implementations against `cryptography`. No bug report
+was made on the strength of it.
+
+Outcome, stated plainly: **the implementation credit is theirs.** Issue #417
+remains attributed to this account as the origin of the finding, and the problem
+gets fixed, which is what the issue asked for. Waiting for a maintainer ruling
+on placement is what cost the implementation; #433 simply chose the sibling
+script, which was the likeliest answer all along.
+
 ### 2026-08-28 — first comment on #417, from a non-maintainer
 
 `luch91` commented. Checked before weighing it: **zero commits to this repo**
