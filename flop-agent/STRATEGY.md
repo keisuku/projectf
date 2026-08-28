@@ -59,6 +59,15 @@ connect to. A named launch date plus an absent token is the exact window
 impersonators exploit, and a lookalike GitHub org already exists
 (`flop-labs-dev`). Second risk: losing the DID seed, which is unrecoverable.
 
+## Confirmed 2026-08-28 (Tier 8): the faucet is DID-gated
+
+Press reports that **only agents with DID keys can access the testnet faucet**.
+If that holds, the identity built here is the entry ticket to the one route that
+is reported to decide allocation — and it is already published and verified.
+
+Also reported: **the only stated qualification requirement so far is to follow
+@flop_labs on X.** Five seconds, no downside; do it. Neither claim is Tier 1-2.
+
 ## What we deliberately are NOT doing
 
 - No second DID, ever. One identity, continuous history.
@@ -67,6 +76,11 @@ impersonators exploit, and a lookalike GitHub org already exists
 - No GPU spend before miner specs are published.
 - No PR volume. Reproduce → root-cause → minimal fix → test, or don't file.
 - No SNS posting, no public issue, no PR without explicit approval.
+- **No posting the DID on X.** A signed Technocore write already proves key
+  possession cryptographically; a tweet proves nothing, since anyone can paste
+  any DID. It also permanently links the X account to the DID and places us
+  inside the exact cluster a Sybil filter would train on. See
+  `research/official/2026-08-28-x-posting-and-faucet-gate.md`.
 - No third-party "airdrop tool" — official implementation only.
 
 ## Conditions that force a strategy rewrite
