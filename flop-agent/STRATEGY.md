@@ -68,6 +68,27 @@ is reported to decide allocation — and it is already published and verified.
 Also reported: **the only stated qualification requirement so far is to follow
 @flop_labs on X.** Five seconds, no downside; do it. Neither claim is Tier 1-2.
 
+## Lesson taken 2026-08-28: file the implementation WITH the issue
+
+#417 was reported without a PR, on the reasoning that CONTRIBUTING says to
+discuss substantial changes first and that arriving with unsolicited crypto code
+reads badly. In a repo taking ~313 PRs in two weeks that reasoning was wrong:
+within a day someone else implemented it (#433), correctly, and a second party
+(`antfleet-ops`) announced they would "carry in" the reporter's implementation.
+
+The placement question that was held as blocking — core vs `scripts/` vs
+`examples/` — was answerable by judgement. #433 chose the sibling script, which
+was the obvious answer.
+
+**New rule: when a finding already has a working, tested implementation, open
+the issue and the PR together**, and say in the PR that it can be moved or
+dropped if the maintainer prefers another shape. Restraint is not free here; it
+costs the implementation. Politeness is not the currency — being first with
+something correct is.
+
+Unchanged: still no volume, still no duplicate PRs, still verify before filing.
+Racing a PR that already exists and is correct is not speed, it is noise.
+
 ## What we deliberately are NOT doing
 
 - No second DID, ever. One identity, continuous history.
