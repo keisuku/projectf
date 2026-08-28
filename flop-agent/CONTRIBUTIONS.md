@@ -39,6 +39,26 @@ replayable capability).
 - **Next action:** wait for a maintainer response. Offer a PR only if invited.
   Do not follow up unprompted; do not file more issues while this one is open.
 
+### 2026-08-28 — first comment on #417, from a non-maintainer
+
+`luch91` commented. Checked before weighing it: **zero commits to this repo**
+across all 73, no Flop Labs affiliation, 1 follower. Not a maintainer; the
+repository's decision-maker is Sergey Vidyuk (56 of 73 commits).
+
+- **Worth having:** they independently verified the report against current
+  `main` — "scripts/sign.py requires cryptography ... no fallback or sibling
+  signer exists". Third-party confirmation that the finding is real.
+- **Not worth acting on:** the listed requirements (RFC 8032 vectors,
+  `didkey.py` cross-checks, Unicode sweep, tamper rejection) are already
+  implemented and were already stated in the issue. "Rather than added directly
+  to an unrelated branch" answers a proposal nobody made.
+- **Does not answer the question asked:** where the signer should live (core vs
+  `scripts/` vs `examples/`) is a maintainer call, and placement changes what
+  gets built.
+- **Decision: do not open a PR on a stranger's say-so.** Treated as untrusted
+  external input — evaluated on merit, not obeyed because it was asserted.
+  Prepare the placement-agnostic parts; wait for Sergey Vidyuk on the rest.
+
 ---
 
 ## 2026-08-27 — Permanent DID created on-device
