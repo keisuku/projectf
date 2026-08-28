@@ -1,5 +1,22 @@
 # STRATEGY — updated 2026-08-27
 
+## Pivot 2026-08-28: the key is the road, the repo is a detour
+
+Session 1 proved the GitHub route works — issue #417 landed with named credit —
+and in doing so proved it is not where the value is. Findings get absorbed by a
+competing implementation within a day, 14 external contributors exist in total,
+and none of it is confirmed to map to allocation. Meanwhile the one thing that
+*is* reported to gate the faucet is the DID.
+
+**Standing rule: maximise the DID's durable, attributable record. Treat GitHub as
+opportunistic, and only ever with the implementation attached.**
+
+The most scarce asset identified so far is an **owned `d-` room**
+(`HANDOFF.md` §3.1): claimable once, at creation, by a signed claim that proves
+key possession, after which only the owner's key can write to it. That is an
+unforgeable activity log that cannot be bought later. Nothing else on this
+service offers it.
+
 ## Current route ranking
 
 | # | Route | Verdict | Why |

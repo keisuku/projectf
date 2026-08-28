@@ -4,12 +4,18 @@ This directory is the **single source of truth** for FLOP participation.
 
 ## Startup routine (every session, in order)
 
+0. **Read `HANDOFF.md` first.** It carries the reframing that matters: the DID is
+   the main road, GitHub is a side road, and the lessons that were expensive to
+   learn. Do not re-derive them.
 1. Read `STATUS.md`, `STRATEGY.md`, `CONTRIBUTIONS.md`, latest `DAILY_BRIEF.md`.
 2. Re-check official sources by tier (`SOURCES.md`). State plainly which were
    reachable and which were not. **Never present stale data as current.**
 3. Diff against the last recorded baseline in `research/official/`. Prioritise
    anything that changes expected FLOP value.
-4. Re-evaluate all routes: Agent / Builder / Creator / Miner / Validator / new.
+4. Re-evaluate all routes, but with the standing ranking from `HANDOFF.md` §1:
+   **what the key does** outranks what the GitHub account does. Ask first what
+   would make the DID's record more durable, more attributable, or more ready for
+   the faucet — and only then whether anything else is worth the hours.
 5. Lead with the `FLOP DAILY` block. Detail after, not before.
 
 Do not continue a previous plan on momentum. If the facts moved, the plan moves.
