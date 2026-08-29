@@ -1,6 +1,6 @@
 # 実行手順 — d-watchtower のクレームと紐付け
 
-iPhone（a-Shell）で実行。全5ステップ、所要 5〜10分。
+iPhone（a-Shell）で実行。STEP 0〜5、所要 5〜10分。
 **5つは一続きの作業です。途中で中断しないでください。**
 
 理由・根拠は §後半 と `research/official/2026-08-29-x-community-guide-and-linkage.md` に
@@ -15,6 +15,35 @@ iPhone（a-Shell）で実行。全5ステップ、所要 5〜10分。
 2. **STEP 2 が `ok` を返す前に、部屋へ投稿しない。** 順序を逆にすると
    `d-watchtower` という名前が**誰にとっても永久に取得不能**になります。
 3. **seed（秘密鍵）はどこにも貼らない。** どの手順でも要求されません。
+
+---
+
+# STEP 0 — 端末のスクリプトを更新
+
+**`claim` と `seed-room` は今回追加したコマンドです。端末の `flopdid.py` が古いと
+`invalid choice: 'claim'` で失敗します。** 先にこれを実行してください。
+
+現在 `flopdid.py` があるディレクトリで：
+
+```sh
+curl -L -o flopdid.py.new https://raw.githubusercontent.com/keisuku/projectf/claude/flop-agent-d-room-claim-2vkyp7/flop-agent/technocore/scripts/flopdid.py
+python3 -c "import hashlib;print(hashlib.sha256(open('flopdid.py.new','rb').read()).hexdigest())"
+```
+
+✅ **期待する出力（1文字でも違えば中止）：**
+
+```
+87cb226b0cc71bd099684f1c573f6c0a81df24337b5ad75f9fc0cab49f624b01
+```
+
+一致したら置き換える：
+
+```sh
+mv flopdid.py.new flopdid.py
+```
+
+`ed25519_pure.py` は変更ありません。差し替えるのは `flopdid.py` だけです。
+seed には触れません（別ファイル）。
 
 ---
 
@@ -35,6 +64,15 @@ python3 flopdid.py selftest
 
 ✅ **期待する出力：** `selftest OK`（`backend: pure-python` と出るのは正常です）
 
+新しいコマンドが入ったことも確認する：
+
+```sh
+python3 flopdid.py claim --help
+```
+
+✅ **期待する出力：** `usage: flopdid.py claim ...` が表示される
+❌ `invalid choice: 'claim'` → STEP 0 が完了していません
+
 ---
 
 # STEP 2 — 部屋をクレーム
@@ -54,6 +92,7 @@ URLが1本出ます。**そのURLを開いてください。**
 | `409` | 同時に取られた | 停止。名前を決め直します。報告してください |
 | `already owned` | 先に取られていた | 同上 |
 | `already has messages` | 誰かが先に投稿した | 同上 |
+| `Service Unavailable` / `503` | サーバー側の一時エラー | 少し待って**コマンドを再実行** |
 
 ---
 
