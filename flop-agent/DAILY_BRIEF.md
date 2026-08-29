@@ -1,50 +1,67 @@
-# DAILY BRIEF — 2026-08-27 (day 1)
+# DAILY BRIEF — 2026-08-29 (day 3)
 
 ```
 FLOP DAILY
 現在の状態：
-DID：NG（未作成 — 意図的。理由は下記）
-Technocore：NG（このコンテナから egress ブロック）
-Testnet：未開始
-重要変更：あり（初回ベースライン確立）
+DID：OK（公開・検証済み。note keepalive 期限 ~2026-09-03）
+Technocore：NG（このコンテナから egress ブロック。GitHub は到達可）
+Testnet：未開始（v0.10.0 のソース全体に faucet/testnet の実装は無し）
+重要変更：あり（クレーム手順に、記録に無かった 24時間の落とし穴を発見）
 
 今日の最適行動
 S+：
-  自分の端末で永続DIDを生成し、seedをバックアップする（所要2分）
+  端末で d-watchtower をクレーム → ok を確認 → 即座に2通シード投稿。
+  この3つは一続きの作業。順序を守る（RUNBOOK §1）。
 S：
-  DID note と署名付きcheck-in のURLを取得して開く（技術的準備は完了済み）
+  週次 keepalive を2本に増やす（DID note と d-watchtower）。
 A：
-  upstream への貢献候補B（sign.py の鍵取り扱い改善）をIssueとして提案する承認判断
+  なし。mb- メールボックスは名前が不推測なので急がない。
 
 今日はやらない：
-  GPU購入・miner準備／SNS投稿／PR量産／2つ目のDID作成／
-  Technocoreでのメッセージ数稼ぎ
+  Kimi 等の追加モデル契約／GPU／SNS投稿／汎用名の部屋の先取り／
+  2つ目のDID作成／VPS契約（任意・今日ではない）
 
 理由：
-  airdropは「testnetの活動」基準と報じられており、Technocoreの投稿量ではない。
-  今買えないのは「継続履歴を持つ1つのDID」と「faucet開放時の即応力」だけ。
-  この2つに絞る。
+  クレームは一度限りで取り消せない。今日の価値は「速く押すこと」ではなく
+  「押し方を間違えないこと」にある。上流ソースから、記録に無かった失敗経路が
+  2つ見つかった（下記）。どちらも黙って名前を失う類のもの。
 ```
 
-## Established today
+## 今日の中身
 
-- Official repo identified and read in full: `flop-labs/technocore-chat` @
-  `9a7399d6` (v0.9.7). Created 2026-08-13 — the project is ~9 days old publicly.
-- A signing toolkit that upstream's **own verifier** accepts, on two independent
-  crypto backends, with no packages required.
-- Two blockers found and documented: this container cannot reach
-  `technocore.chat` or `flop.finance` (egress policy), and it is ephemeral.
+**部屋名は `d-watchtower` に決定。** 汎用名（`d-jobs` 等）を避けたのは弱気だからではない。
+所有部屋は所有者の鍵からしか書き込めない仕様なので、共有財の名前を取ることは資産の獲得では
+なく共有財の削除であり、`zero_response_share` を公開している相手にはスクワッティングに見える。
+`d-flopwatch` を避けたのは、先頭の `flop` が公式との混同を招くため——`STRATEGY.md` が最大の
+リスクとして挙げている `flop-labs-dev` 型の紛らわしさを、自分でやることになる。
 
-## The judgement call worth reading
+**上流ソース（`aa7017f` / v0.10.0）から、記録に無かった失敗経路が2つ。**
 
-I did **not** generate the permanent key here. This container is ephemeral and
-cannot reach Technocore, so a key made here would gain no history today, could
-not be published today, and would need its private seed exported through a chat
-transcript — which your own rules forbid. Deferring costs nothing and keeps the
-identity on hardware you control. One local command closes it.
+1. クレームは *note* を書くだけで、部屋は作らない。部屋ファイルが無い間
+   `_guards_a_live_room` は `OSError` を拾って `False` を返すので、`room-owners` note は
+   保護されず通常の7日ルールで消える。**クレームして放置＝1週間で名前が戻る。**
+2. メッセージが1通だけの部屋は *stillborn* 判定で **24時間** で消える。開放部屋なら誰かの
+   返信で解除されるが、`d-` 部屋は所有者しか書けない仕様上、外から返信が来ることが原理的に
+   無い。**2通が必須。**
 
-## Watch list
+どちらも「クレーム成功後に静かに名前を失う」経路で、事前に読まなければ気付けなかった。
 
-Testnet start date · client release · faucet · agent registration · scoring or
-points rules · Sybil rules · miner/validator specs · whitepaper or tokenomics ·
-any official token contract (until then, all are fake).
+**クレームURLは上流自身の検証器で確認済み。** 自作の検証器で自作の署名を検証しても
+「自分と整合している」ことしか言えないので、`didkey.verify()` と `store.ownable()` を直接
+呼んでいる。改竄4種の拒否、名前クラス14件の一致、共有 nonce の順序まで込みで PASS。
+再現手順は `technocore/tests/test_claim_against_upstream.py`。
+
+**支出の質問への回答は「両方いいえ、ただし理由が違う」。**
+Kimi 等の追加モデル契約は不要——クリティカルパス上のどの工程も推論律速ではない（詳細は
+`PLAYBOOK-testnet-day1.md` §3）。VPS は唯一まともな機序のある支出だが、任意かつ今日ではない
+（同 §4）。seed は VPS に置かない。DID note の keepalive は**署名不要**なので、seed 無しで
+自動化できる——その分離のために `flopwatch.py` はそう書いてある。
+
+## 残っている義務
+
+| 対象 | 期限 | 署名（＝端末）が要るか |
+|---|---|---|
+| DID note | < 7日ごと | **不要** |
+| `d-watchtower`（クレーム後） | < 7日ごと | **必要** |
+
+部屋を1つに絞る理由がここにある。所有は毎週の作業を永久に増やす。

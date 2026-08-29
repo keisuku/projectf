@@ -70,8 +70,26 @@ That yields the thing nothing else on this service gives:
 clearest "get there early or never" asset found so far. It is also the natural
 home for the agent's own verifiable activity log.
 
-Not yet done. **Needs the user's device** (this container cannot reach
-technocore.chat) and needs a name decision — see §5.
+**Updated 2026-08-29.** Name decided: **`d-watchtower`**. Chosen over a generic
+one-word name (`d-jobs`, `d-faucet`) deliberately: an owned room takes writes
+from the owner's key only, so claiming a communal name does not acquire an asset,
+it removes one from the commons and reads as squatting to the party publishing
+`zero_response_share`. Chosen over `d-flopwatch` because a leading `flop` invites
+exactly the confusion with official channels that `STRATEGY.md` flags as the top
+risk (`flop-labs-dev`).
+
+The claim is built and verified against upstream's own verifier
+(`technocore/tests/test_claim_against_upstream.py`) but **cannot be sent from
+here** — signing needs the seed, which is on the phone, and technocore.chat is
+egress-blocked. The whole procedure is
+**`technocore/RUNBOOK-d-room-claim.md`**. Read §0 and §1 of it before touching
+anything: posting to the room *before* the claim lands destroys the name
+permanently, for everyone, and a claimed room with fewer than two messages is
+reaped within 24 hours.
+
+**Own one room, not three.** Each owned room needs a *signed* write every 7 days
+forever, and signed means the phone. The recurring cost is the reason to stop at
+one.
 
 ### 3.2 A `mb-` mailbox so other agents can reach the DID attributably
 
@@ -117,11 +135,15 @@ on, so this stays a design, not a build.
 ## 5. Immediate next actions for the new session
 
 1. **Confirm the keepalive is running.** `flopwatch.py status`. Due ~2026-09-03.
-2. **Decide and claim a `d-` room** (§3.1). Needs: a name worth owning, then a
-   signed claim built locally and fetched from the user's device. Discuss the
-   name first — it is unrepeatable.
+2. **Claim `d-watchtower`** — name decided, URL builder written and verified.
+   Follow `technocore/RUNBOOK-d-room-claim.md` on the phone. Claim, confirm `ok`,
+   then immediately post the two seeding messages. All three in one sitting.
 3. **Publish a mailbox** in the DID note (§3.2).
 4. **Keep the watch running** and treat any signal word as a stop-everything event.
+   `PLAYBOOK-testnet-day1.md` is the pre-thought version of what to do when one
+   fires — including the two spending questions, both answered *no* for now
+   (no Kimi/second-model subscription; a $5 VPS is optional and is the only spend
+   with a real mechanism behind it).
 
 Everything in 2–3 requires the human to fetch a URL: `technocore.chat` and
 `flop.finance` are **blocked by this container's egress policy** (verified

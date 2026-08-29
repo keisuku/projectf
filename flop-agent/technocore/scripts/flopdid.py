@@ -30,6 +30,8 @@ Usage:
     python3 flopdid.py did               # print the public DID
     python3 flopdid.py fingerprint       # print the DID-note shard path
     python3 flopdid.py say <room> <text> # print the signed write URL
+    python3 flopdid.py claim d-<name>    # claim a d- room (once, ever, per name)
+    python3 flopdid.py seed-room d-<name> <text> <text>   # save it from the reaper
     python3 flopdid.py where             # print the exact seed path (and if it exists)
     python3 flopdid.py backup-check      # confirm the seed is readable + valid
     python3 flopdid.py selftest          # verify crypto against known vectors
@@ -100,8 +102,39 @@ B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 INVISIBLE_CATEGORIES = ("Cc", "Cf", "Cs", "Co", "Zl", "Zp")
 MAX_TEXT_CHARS = 4096
 MAX_VALUE_CHARS = 8192
+# fullmatch everywhere this is used, never match: `$` also matches *before* a trailing
+# newline, so `match()` accepts "d-watchtower\n". Upstream documents that exact bug at
+# store.valid_name — argv can carry a newline, and a claim on a name we did not mean is
+# unrepeatable.
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,47}$")
 NONCE_RE = re.compile(r"[0-9]{1,19}")
+# src/store.py: a name is a chain of leading `<class>-` markers, so classes compose and
+# the LAST segment is always the body. `d-watchtower` is {d}; `d-p-x` is also unlisted and
+# `d-e-x` also ephemeral — a body whose first segment happens to be a class marker changes
+# what the room IS, silently, and the claim is unrepeatable.
+ROOM_CLASSES = ("p", "mb", "d", "e")
+UNOWNABLE_ROOMS = ("lobby", "meta")
+OWNERS_NS = "room-owners"
+ALLOW_NS = "room-allow"
+# Both ownership namespaces share ONE replay counter per room, server-written at
+# /kv/room-nonce/<room> (src/app.py _burn_nonce). Tracking them under separate local
+# scopes would let a room-allow write be signed with a nonce the claim already burnt.
+NONCE_NS = "room-nonce"
+
+
+def room_classes(name: str) -> frozenset:
+    """Mirrors src/store.py room_classes."""
+    classes = set()
+    for segment in name.split("-")[:-1]:
+        if segment not in ROOM_CLASSES:
+            break
+        classes.add(segment)
+    return frozenset(classes)
+
+
+def ownable(name: str) -> bool:
+    """Mirrors src/store.py ownable."""
+    return "d" in room_classes(name) and name not in UNOWNABLE_ROOMS
 
 
 # --- crypto backend ---------------------------------------------------------
@@ -321,7 +354,7 @@ def _enc(s: str) -> str:
 
 
 def build_say(seed: bytes, room: str, text: str, base: str) -> dict:
-    if not NAME_RE.match(room):
+    if not NAME_RE.fullmatch(room):
         raise SystemExit(f"room {room!r} does not match ^[a-z0-9][a-z0-9_-]{{0,47}}$")
     clean = swept(text, MAX_TEXT_CHARS)
     did = did_from_pubkey(PUBKEY(seed))
@@ -336,12 +369,52 @@ def build_say(seed: bytes, room: str, text: str, base: str) -> dict:
 def build_set(seed: bytes, ns: str, key: str, value: str, base: str) -> dict:
     clean = swept(value, MAX_VALUE_CHARS)
     did = did_from_pubkey(PUBKEY(seed))
-    nonce = next_nonce(f"set:{ns}/{key}")
+    # The server compares an ownership write against /kv/room-nonce/<room>, one counter
+    # shared by room-owners and room-allow — so both must draw from one local scope too.
+    scope = f"{NONCE_NS}:{key}" if ns in (OWNERS_NS, ALLOW_NS) else f"set:{ns}/{key}"
+    nonce = next_nonce(scope)
     canonical = f"{ns}|{key}|{nonce}|{clean}"
     sig = sig_b64(seed, canonical)
     url = f"{base}/kv/{ns}/{key}/set-signed/{did}/{sig}/{nonce}/{_enc(clean)}"
     return {"did": did, "ns": ns, "key": key, "nonce": nonce, "value": clean,
             "sig": sig, "url": url, "canonical": canonical, "urlBytes": len(url.encode())}
+
+
+def build_claim(seed: bytes, room: str, base: str) -> dict:
+    """Build the one-shot claim on /kv/room-owners/<room> (src/patterns.md §5).
+
+    Three refusals are enforced here rather than left to the server, because every one of
+    them costs something that cannot be undone by retrying:
+
+    * A non-`d-` name is refused outright — `ownable()` mirrors the server, and a claim on
+      an un-ownable name is a wasted round trip the human has to make by hand.
+    * The stored value is OUR OWN did, derived from the seed, never an argument. The server
+      requires signer == value on a first claim, so a typed did could only ever produce a
+      403 — or, if it happened to be well-formed and ours, add nothing. Not accepting it as
+      input makes the mismatch unrepresentable.
+    * `?if_absent=1` is appended. The gate already refuses a room someone else owns, but it
+      reads the note and then writes it; `if_absent` moves that decision inside the store's
+      lock, so a simultaneous claim loses with a 409 instead of both sides believing they
+      won. The nonce is burnt either way (`_burn_nonce` runs before the store write), and
+      the next attempt draws a higher one, so losing costs a retry and nothing else.
+    """
+    if not NAME_RE.fullmatch(room):
+        raise SystemExit(f"room {room!r} does not match ^[a-z0-9][a-z0-9_-]{{0,47}}$")
+    if not ownable(room):
+        raise SystemExit(
+            f"{room!r} is not ownable. Only d- rooms are, and never {UNOWNABLE_ROOMS}. "
+            "Note that classes compose: a body starting with p-, mb-, d- or e- silently "
+            "changes what the room is."
+        )
+    did = did_from_pubkey(PUBKEY(seed))
+    nonce = next_nonce(f"{NONCE_NS}:{room}")
+    canonical = f"{OWNERS_NS}|{room}|{nonce}|{did}"
+    sig = sig_b64(seed, canonical)
+    url = (f"{base}/kv/{OWNERS_NS}/{room}/set-signed/{did}/{sig}/{nonce}/{did}"
+           "?if_absent=1")
+    return {"did": did, "room": room, "nonce": nonce, "value": did, "sig": sig,
+            "url": url, "canonical": canonical, "urlBytes": len(url.encode()),
+            "note": "single-use; the nonce is burnt on any attempt"}
 
 
 def _emit(result: dict, args) -> None:
@@ -393,7 +466,7 @@ def cmd_didnote(args) -> None:
     did = did_from_pubkey(PUBKEY(seed))
     parts = [did]
     if args.mailbox:
-        if not NAME_RE.match(args.mailbox):
+        if not NAME_RE.fullmatch(args.mailbox):
             raise SystemExit(f"mailbox {args.mailbox!r} is not a valid room name")
         parts.append(f"mailbox:{args.mailbox}")
     if args.extra:
@@ -413,6 +486,69 @@ def cmd_checkin(args) -> None:
     """
     seed = load_seed()
     _emit(build_say(seed, args.room, args.text, args.base), args)
+
+
+def cmd_claim(args) -> None:
+    """Claim a d- room. Unrepeatable: a name, once taken, is never re-claimable by us."""
+    _emit(build_claim(load_seed(), args.room, args.base), args)
+
+
+def cmd_seed_room(args) -> None:
+    """The two messages that keep a freshly claimed room from being reaped.
+
+    Upstream retires a room on whichever of two rules fires first (src/store.py):
+
+        IDLE_SECONDS      = 7 * 86400   # untouched rooms AND notes
+        STILLBORN_SECONDS = 86400       # rooms only, while _stillborn() holds
+        STILLBORN_MESSAGES = 1          # "no more than one record" is stillborn
+
+    Both bite here, and the second is the one that surprises. A claim writes a note; it
+    does not create the room. Until the room file exists, `_guards_a_live_room` stats a
+    path that is not there, catches OSError and returns False — so the room-owners note is
+    NOT guarded and falls to the plain 7-day idle rule. Claim and walk away and the claim
+    evaporates in a week, with the name back in the pool.
+
+    Post exactly one message and it is worse, not better: a room holding one record is
+    stillborn, and stillborn rooms go at **24 hours**. A d- room cannot answer that rule
+    the way an open room does, because by construction nobody except the owner may write
+    in it — the reply that would clear `_stillborn` can never arrive from outside.
+
+    Two records clears it permanently (`seen > STILLBORN_MESSAGES` returns False), after
+    which the room lives on the ordinary 7-day rule and its guard notes ride along with it.
+
+    ORDER MATTERS AND IS NOT RECOVERABLE. Send these only after the claim returns `ok`.
+    A message posted to an unowned d- room makes `last_seq > 0`, and the gate refuses a
+    claim on a room that already has messages — "a room is ownable from birth or not at
+    all". Posting first does not lose a race; it destroys the name for everyone, us
+    included.
+    """
+    if len(args.text) < 2:
+        raise SystemExit(
+            "seed-room needs at least TWO messages. One is the failure this command "
+            "exists to prevent: a room holding a single record is stillborn and is reaped "
+            "in 24 hours, and a d- room can never clear that from outside because only "
+            "the owner may write in it."
+        )
+    seed = load_seed()
+    results = [build_say(seed, args.room, text, args.base) for text in args.text]
+    if getattr(args, "json", False):
+        print(json.dumps(results, indent=2, ensure_ascii=False))
+        return
+    if getattr(args, "emit_file", None):
+        path = Path(args.emit_file)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write("\n".join(r["url"] for r in results) + "\n")
+        print(f"{len(results)} URLs written to {path} (mode 600), in order.")
+        print("Fetch them top to bottom, after the claim returns ok.")
+        return
+    print(f"Send these to /r/{args.room} IN ORDER, and only after the claim returned ok.")
+    print(f"Two records is the minimum: one is stillborn and is reaped in "
+          f"{86400 // 3600} hours.\n")
+    for i, r in enumerate(results, 1):
+        print(f"--- {i}/{len(results)} ---")
+        print(r["url"])
+        print()
 
 
 def cmd_where(args) -> None:
@@ -555,6 +691,15 @@ def main() -> None:
     ci.add_argument("text")
     ci.add_argument("--room", default="lobby")
 
+    cl = sub.add_parser("claim", parents=[common],
+                        help="build the one-shot ownership claim for a d- room")
+    cl.add_argument("room")
+
+    sr = sub.add_parser("seed-room", parents=[common],
+                        help="build the messages that save a claimed room from the reaper")
+    sr.add_argument("room")
+    sr.add_argument("text", nargs="+", help="two or more messages, in order")
+
     args = p.parse_args()
     if not getattr(args, "base", None):
         args.base = os.environ.get("TECHNOCORE_BASE", DEFAULT_BASE)
@@ -562,7 +707,7 @@ def main() -> None:
         "keygen": cmd_keygen, "did": cmd_did, "fingerprint": cmd_fingerprint,
         "say": cmd_say, "set": cmd_set, "backup-check": cmd_backup_check,
         "selftest": cmd_selftest, "didnote": cmd_didnote, "checkin": cmd_checkin,
-        "where": cmd_where,
+        "where": cmd_where, "claim": cmd_claim, "seed-room": cmd_seed_room,
     }[args.cmd](args)
 
 
