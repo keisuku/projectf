@@ -30,6 +30,7 @@ Usage:
     python3 flopdid.py did               # print the public DID
     python3 flopdid.py fingerprint       # print the DID-note shard path
     python3 flopdid.py say <room> <text> # print the signed write URL
+    python3 flopdid.py claim d-<name> --fetch   # claim, and perform the request
     python3 flopdid.py claim d-<name>    # claim a d- room (once, ever, per name)
     python3 flopdid.py seed-room d-<name> <text> <text>   # save it from the reaper
     python3 flopdid.py where             # print the exact seed path (and if it exists)
@@ -49,7 +50,9 @@ import secrets as _secrets
 import sys
 import time
 import unicodedata
+import urllib.error
 import urllib.parse
+import urllib.request
 from pathlib import Path
 
 # --- layout -----------------------------------------------------------------
@@ -417,7 +420,48 @@ def build_claim(seed: bytes, room: str, base: str) -> dict:
             "note": "single-use; the nonce is burnt on any attempt"}
 
 
+def fetch(url: str) -> tuple[int, str]:
+    """GET the URL and return (status, body), treating 4xx/5xx as a result, not an error.
+
+    Exists because the shell kept being the thing that broke. `curl -s` hides transport
+    errors *and* the status line, so a failed write and a 503 and a quoting mistake all
+    look identical: an empty line. On a one-shot claim that ambiguity is the expensive
+    kind — you cannot tell whether to retry.
+
+    Going through urllib also removes the shell from the loop entirely: no quoting of the
+    `?` in `?if_absent=1`, no difference between one platform's curl and another's, and no
+    temporary file on a system that may not let you write one.
+
+    The body of a refusal is the useful part here — upstream writes the reason and the
+    corrected URL into it — so HTTPError is unwrapped and returned rather than raised.
+    """
+    req = urllib.request.Request(url, headers={"User-Agent": "flopdid"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.status, resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read().decode("utf-8", "replace")
+    except urllib.error.URLError as exc:
+        raise SystemExit(f"network error: {exc.reason}\nThe request was never sent. "
+                         "Nothing was spent; retry the same command.")
+
+
+def _report(url: str, args) -> int:
+    """Fetch, print status and body, and say plainly whether it landed."""
+    status, body = fetch(url)
+    print(f"HTTP {status}")
+    print(body.rstrip() or "(empty body)")
+    if status == 200:
+        print("--> OK")
+    else:
+        print(f"--> NOT OK ({status}). Nothing above this line was stored.")
+    return status
+
+
 def _emit(result: dict, args) -> None:
+    if getattr(args, "fetch", False):
+        _report(result["url"], args)
+        return
     if getattr(args, "json", False):
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return
@@ -531,6 +575,18 @@ def cmd_seed_room(args) -> None:
         )
     seed = load_seed()
     results = [build_say(seed, args.room, text, args.base) for text in args.text]
+    if getattr(args, "fetch", False):
+        # In order, and stop on the first failure: message 2 is what clears the stillborn
+        # rule, so sending it after message 1 was refused would leave the room in exactly
+        # the state this command exists to avoid, while reporting success.
+        for i, r in enumerate(results, 1):
+            print(f"--- {i}/{len(results)} ---")
+            if _report(r["url"], args) != 200:
+                print(f"\nStopped at {i}/{len(results)}. Fix the cause and re-run the whole "
+                      "command — it re-signs with fresh nonces, so a partial send is safe "
+                      "to repeat.")
+                raise SystemExit(1)
+        return
     if getattr(args, "json", False):
         print(json.dumps(results, indent=2, ensure_ascii=False))
         return
@@ -661,6 +717,8 @@ def main() -> None:
                         help="machine-readable output")
     common.add_argument("--emit-file", default=argparse.SUPPRESS,
                         help="write the URL to a 0600 file instead of stdout")
+    common.add_argument("--fetch", action="store_true", default=argparse.SUPPRESS,
+                        help="perform the request and print the status and body")
 
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0], parents=[common])
     sub = p.add_subparsers(dest="cmd", required=True)

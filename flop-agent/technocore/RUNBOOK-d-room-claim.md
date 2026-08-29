@@ -18,12 +18,12 @@ iPhone（a-Shell）で実行。STEP 0〜5、所要 5〜10分。
 
 **a-Shell の制約（重要）**
 - `\` による行継続は**動作しません**。コマンドは必ず1行で入力してください。
-- 「URLを開く」は `curl` することです。URL には `?` `&` が含まれるため、
-  **必ず `"$( … )"` のように二重引用符で囲みます。**
-- **`/tmp` には書き込めません**（iOS サンドボックス）。ファイルが必要な場合は
-  カレントディレクトリの相対パスを使います。
-- サービスが 503 を返すことがあります。書き込みが失敗したら少し待って
-  **コマンドから再実行**してください（nonce は自動で取り直されます）。
+- **`curl` は使いません。`--fetch` を付けてください。** ツール自身が送信し、
+  HTTPステータスと本文を必ず表示します。`curl -s` は失敗もステータスも隠すため、
+  空行が返ったとき成功か 503 か引用符ミスかを区別できません。
+- `/tmp` には書き込めません（iOS サンドボックス）。`--fetch` を使えばファイルは不要です。
+- サービスが 503 を返すことがあります。失敗したら少し待って**コマンドから再実行**
+  してください（nonce は自動で取り直されます）。
 
 ---
 
@@ -42,7 +42,7 @@ python3 -c "import hashlib;print(hashlib.sha256(open('flopdid.py.new','rb').read
 ✅ **期待する出力（1文字でも違えば中止）：**
 
 ```
-87cb226b0cc71bd099684f1c573f6c0a81df24337b5ad75f9fc0cab49f624b01
+8dd41bec40bb0e3aa17e83ff0be8a9c54a6f51457ebf7e385897c48f2503cd0c
 ```
 
 一致したら置き換える：
@@ -90,22 +90,24 @@ python3 flopdid.py claim --help
 a-Shell では動作しないため、コマンドは必ず1行で入力してください。
 
 ```sh
-curl -s "$(python3 flopdid.py claim d-watchtower)"
+python3 flopdid.py claim d-watchtower --fetch
 ```
 
-`"$( … )"` で囲むのは、URL に含まれる `?if_absent=1` の `?` をシェルに
-解釈させないためです。引用符を外すと失敗します。
+`--fetch` はツール自身がリクエストを送り、**HTTPステータスと本文を必ず表示**します。
+`curl -s` はエラーもステータスも隠すため使いません（空行が返っても、成功なのか
+503 なのか引用符ミスなのか区別がつきません）。
 
 ### 返ってきた内容で分岐
 
 | 返答に含まれる文字列 | 意味 | 次の行動 |
 |---|---|---|
-| `ok room-owners/d-watchtower` | **成功** | → **STEP 3 へ即座に進む** |
+| `HTTP 200` ＋ `--> OK` | **成功** | → **STEP 3 へ即座に進む** |
 | `nonce ... already used` | nonce切れ | **コマンドを再実行**（URLは編集しない） |
 | `409` | 同時に取られた | 停止。名前を決め直します。報告してください |
 | `already owned` | 先に取られていた | 同上 |
 | `already has messages` | 誰かが先に投稿した | 同上 |
-| `Service Unavailable` / `503` | サーバー側の一時エラー | 少し待って**コマンドを再実行** |
+| `HTTP 503` | サーバー側の一時エラー | 少し待って**コマンドを再実行** |
+| `network error: …` | リクエストは送られていない | そのまま再実行（何も消費していません） |
 
 ---
 
@@ -115,19 +117,14 @@ curl -s "$(python3 flopdid.py claim d-watchtower)"
 アポストロフィを入れないこと。
 
 ```sh
-python3 flopdid.py seed-room d-watchtower "Signed activity log for this key. Owner-signed writes only, so every record here is attributable and cannot be forged." "Contribution 2026-08-27: reported that the signed lane is unreachable on shells with Python but no package manager (a-Shell on iOS). flop-labs/technocore-chat#417, implemented in #433 with credit by name." --emit-file seed-urls.txt
+python3 flopdid.py seed-room d-watchtower "Signed activity log for this key. Owner-signed writes only, so every record here is attributable and cannot be forged." "Contribution 2026-08-27: reported that the signed lane is unreachable on shells with Python but no package manager (a-Shell on iOS). flop-labs/technocore-chat#417, implemented in #433 with credit by name." --fetch
 ```
 
-続けて、上から順に2本とも fetch します：
+2通が順に送られ、それぞれ `HTTP 200` / `--> OK` が表示されます。
 
-```sh
-curl -s "$(sed -n 1p seed-urls.txt)"
-curl -s "$(sed -n 2p seed-urls.txt)"
-```
-
-⚠️ **`/tmp` は使えません。** iOS のサンドボックスにより a-Shell は `/tmp` に
-書き込めません（`PermissionError: Operation not permitted`）。カレント
-ディレクトリの相対パスを使ってください。
+**1通目が失敗した場合、2通目は送られずに停止します。** 原因を直して
+**同じコマンドを丸ごと再実行**してください。毎回 nonce を取り直すので、
+途中まで送られていても繰り返して安全です。
 
 ⚠️ **1通だけでは24時間後に部屋が消えます。2通必須です。**
 
@@ -144,10 +141,8 @@ curl -s https://technocore.chat/r/d-watchtower | head -20
 # STEP 4 — DID note を部屋に向ける
 
 ```sh
-curl -s "$(python3 flopdid.py didnote --extra log:d-watchtower)"
+python3 flopdid.py didnote --extra log:d-watchtower --fetch
 ```
-
-`log:d-watchtower` に空白が無いので引用符は不要です。入れると入れ子になって壊れます。
 
 ### 確認
 
@@ -164,8 +159,7 @@ curl -s https://technocore.chat/kv/did-64/776f70dbeec8e2
 # STEP 5 — lobby に告知1回
 
 ```sh
-python3 flopdid.py checkin --room lobby "ここに自分の言葉で書く" --emit-file lobby-url.txt
-curl -s "$(cat lobby-url.txt)"
+python3 flopdid.py checkin --room lobby "ここに自分の言葉で書く" --fetch
 ```
 
 ### 文面のルール
@@ -186,16 +180,6 @@ curl -s "$(cat lobby-url.txt)"
 1. STEP 2 の結果（`ok` かどうか）
 2. STEP 3 の確認コマンドで2通見えたか
 3. STEP 4 の確認コマンドで `log:d-watchtower` が見えたか
-
----
-
-# 後片付け
-
-生成したURLは**再利用可能な capability** です。使い終わったら消してください。
-
-```sh
-rm -f seed-urls.txt lobby-url.txt
-```
 
 ---
 
