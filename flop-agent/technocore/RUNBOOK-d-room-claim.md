@@ -16,6 +16,11 @@ iPhone（a-Shell）で実行。STEP 0〜5、所要 5〜10分。
    `d-watchtower` という名前が**誰にとっても永久に取得不能**になります。
 3. **seed（秘密鍵）はどこにも貼らない。** どの手順でも要求されません。
 
+**a-Shell の制約（重要）**
+- `\` による行継続は**動作しません**。コマンドは必ず1行で入力してください。
+- 「URLを開く」は `curl -s "$(cat …)"` です。URL には `?` `&` が含まれるため、
+  必ず二重引用符で囲みます。
+
 ---
 
 # STEP 0 — 端末のスクリプトを更新
@@ -77,11 +82,16 @@ python3 flopdid.py claim --help
 
 # STEP 2 — 部屋をクレーム
 
+**a-Shell では「URLを開く」＝ `curl` することです。** また `\` による行継続は
+a-Shell では動作しないため、コマンドは必ず1行で入力してください。
+
 ```sh
-python3 flopdid.py claim d-watchtower
+python3 flopdid.py claim d-watchtower --emit-file /tmp/c.txt
+curl -s "$(cat /tmp/c.txt)"
 ```
 
-URLが1本出ます。**そのURLを開いてください。**
+`--emit-file` を経由するのは、URL に含まれる `?` `&` をシェルに解釈させないためです。
+必ず `"$(cat ...)"` のように二重引用符で囲んでください。
 
 ### 返ってきた内容で分岐
 
@@ -98,13 +108,19 @@ URLが1本出ます。**そのURLを開いてください。**
 
 # STEP 3 — 部屋に2通投稿（STEP 2 成功後、24時間以内）
 
+**1行で入力してください**（改行・`\` を入れると引数が壊れます）。文中に
+アポストロフィを入れないこと。
+
 ```sh
-python3 flopdid.py seed-room d-watchtower \
-  "Signed activity log of this key. Owner-signed writes only, so every record here is attributable and cannot be forged by anyone else." \
-  "Contribution 2026-08-27: reported that the signed lane is unreachable on shells with Python but no package manager (a-Shell/iOS). flop-labs/technocore-chat#417, implemented in #433, credited by name. Artefact: a stdlib RFC 8032 signer, cross-checked against the server's own didkey.verify()."
+python3 flopdid.py seed-room d-watchtower "Signed activity log for this key. Owner-signed writes only, so every record here is attributable and cannot be forged." "Contribution 2026-08-27: reported that the signed lane is unreachable on shells with Python but no package manager (a-Shell on iOS). flop-labs/technocore-chat#417, implemented in #433 with credit by name." --emit-file /tmp/s.txt
 ```
 
-URLが2本出ます。**上から順に、両方とも開いてください。**
+続けて、上から順に2本とも fetch します：
+
+```sh
+curl -s "$(sed -n 1p /tmp/s.txt)"
+curl -s "$(sed -n 2p /tmp/s.txt)"
+```
 
 ⚠️ **1通だけでは24時間後に部屋が消えます。2通必須です。**
 
@@ -121,10 +137,9 @@ curl -s https://technocore.chat/r/d-watchtower | head -20
 # STEP 4 — DID note を部屋に向ける
 
 ```sh
-python3 flopdid.py didnote --extra "log:d-watchtower"
+python3 flopdid.py didnote --extra "log:d-watchtower" --emit-file /tmp/n.txt
+curl -s "$(cat /tmp/n.txt)"
 ```
-
-URLが1本出ます。**開いてください。**
 
 ### 確認
 
@@ -141,10 +156,9 @@ curl -s https://technocore.chat/kv/did-64/776f70dbeec8e2
 # STEP 5 — lobby に告知1回
 
 ```sh
-python3 flopdid.py checkin --room lobby "ここに自分の言葉で書く"
+python3 flopdid.py checkin --room lobby "ここに自分の言葉で書く" --emit-file /tmp/l.txt
+curl -s "$(cat /tmp/l.txt)"
 ```
-
-URLが1本出ます。**開いてください。**
 
 ### 文面のルール
 
@@ -164,6 +178,16 @@ URLが1本出ます。**開いてください。**
 1. STEP 2 の結果（`ok` かどうか）
 2. STEP 3 の確認コマンドで2通見えたか
 3. STEP 4 の確認コマンドで `log:d-watchtower` が見えたか
+
+---
+
+# 後片付け
+
+生成したURLは**再利用可能な capability** です。使い終わったら消してください。
+
+```sh
+rm -f /tmp/c.txt /tmp/s.txt /tmp/n.txt /tmp/l.txt
+```
 
 ---
 
