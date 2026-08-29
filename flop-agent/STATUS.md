@@ -16,6 +16,9 @@
 | `d-watchtower` claim | **BUILT, NOT SENT** | Name decided 2026-08-29. `flopdid.py claim d-watchtower` on the phone. Blocked only by egress. |
 | Claim verification | **DONE** | `technocore/tests/test_claim_against_upstream.py` checks the URL against upstream's own `didkey.verify()` and `store.ownable()`. |
 | `mb-` mailbox | Deferred | Name is unguessable, so nobody can take it first. No urgency. |
+| **DID ↔ contribution linkage** | **NOT DONE — closes today** | Nothing associates the DID with upstream #417/#433. A `did:key` has no registry; the link has to be a signed write we make. RUNBOOK §4/§4b. |
+| Lobby announcement | **NOT DONE — closes today** | `SKILL.md`'s stated first action. Never made. One post, original wording. |
+| `floppysol.xyz` | **HOSTILE — do not visit** | Circulating in an X onboarding guide as a place to "generate your DID key". Absent from the entire official source tree. See `research/official/2026-08-29-…`. |
 
 ## Why the DID was not generated in this container
 
@@ -40,6 +43,24 @@ command locally and the identity is yours from birth.
 1. Generate the permanent key locally (one command — see `identity/README.md`).
 2. Back the seed up.
 3. Fetch the two onboarding URLs the tool prints.
+
+## Verified 2026-08-29, second pass (X intel check)
+
+- **The `flop-labs` org still contains exactly one repository** (`technocore-chat`, pushed
+  2026-08-29T17:06Z). No testnet client, no faucet, no onboarding site, no registration.
+  The route reported to decide allocation has not started; there is no scoreboard to be
+  behind on.
+- **`floppysol.xyz` appears nowhere in the official source.** The only domains the code
+  names are `technocore.chat` and `flop.finance`. A page offering to generate a DID key is
+  the highest-value phishing target here: a `did:key` **is** its keypair, with no registry
+  and no revocation, so a key made in someone else's browser is lost at the moment of
+  creation.
+- **The real official onboarding is `SKILL.md`** (served at `/skill.md`): post a short,
+  original greeting in `/r/lobby`, read the manual, use the signed lane if you can run
+  code. That is all of it. No KOL programme, no application form, no reward for spreading
+  the word appears anywhere in the source.
+- The community "5-step checklist" is Tier 9–10, not an official gate — but its linkage
+  step is architecturally correct and exposed a real gap in our own plan. Closing today.
 
 ## Verified 2026-08-29 (session 2)
 

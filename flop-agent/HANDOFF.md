@@ -138,6 +138,13 @@ on, so this stays a design, not a build.
 2. **Claim `d-watchtower`** — name decided, URL builder written and verified.
    Follow `technocore/RUNBOOK-d-room-claim.md` on the phone. Claim, confirm `ok`,
    then immediately post the two seeding messages. All three in one sitting.
+2b. **Close the linkage gap in the same sitting** (RUNBOOK §4b, §4c). The GitHub
+   contribution is permanently timestamped but is not reachable from the DID —
+   nothing associates a `did:key` with anything until we sign a write saying so.
+   Message 2 of the room seeding IS that record; the DID note then points at the
+   room; lobby gets one announcement. Identity and activity stopped being two
+   separate projects on 2026-08-29.
+
 3. **Publish a mailbox** in the DID note (§3.2).
 4. **Keep the watch running** and treat any signal word as a stop-everything event.
    `PLAYBOOK-testnet-day1.md` is the pre-thought version of what to do when one
@@ -170,6 +177,19 @@ around. Build the URL, hand it over.
    derivation all run from the public DID. Reach for the key only to sign.
 
 ---
+
+## 6b. Added 2026-08-29 — the lesson from the X guide
+
+**A confidently-relayed community guide is Tier 9, and helpfulness is the delivery
+mechanism.** One circulating "onboarding checklist" was 80% harmless-and-roughly-right and
+carried, in step 1, a link to `floppysol.xyz/onboard` offering to *generate your DID key*.
+That domain is in no official source. A key generated in someone else's browser has no
+revocation path — `did:key` has no registry — so it is lost at birth, silently.
+
+Two habits follow. **Check the claim against the source tree before acting**, which took
+one grep. And **separate the guide's tier from its usefulness**: the same document's
+linkage step was architecturally sound and exposed a real gap in our plan. Dismissing the
+whole thing for its worst item would have cost as much as swallowing it whole.
 
 ## 7. Non-negotiables
 
