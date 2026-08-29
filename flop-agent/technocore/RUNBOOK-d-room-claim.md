@@ -18,8 +18,12 @@ iPhone（a-Shell）で実行。STEP 0〜5、所要 5〜10分。
 
 **a-Shell の制約（重要）**
 - `\` による行継続は**動作しません**。コマンドは必ず1行で入力してください。
-- 「URLを開く」は `curl -s "$(cat …)"` です。URL には `?` `&` が含まれるため、
-  必ず二重引用符で囲みます。
+- 「URLを開く」は `curl` することです。URL には `?` `&` が含まれるため、
+  **必ず `"$( … )"` のように二重引用符で囲みます。**
+- **`/tmp` には書き込めません**（iOS サンドボックス）。ファイルが必要な場合は
+  カレントディレクトリの相対パスを使います。
+- サービスが 503 を返すことがあります。書き込みが失敗したら少し待って
+  **コマンドから再実行**してください（nonce は自動で取り直されます）。
 
 ---
 
@@ -86,12 +90,11 @@ python3 flopdid.py claim --help
 a-Shell では動作しないため、コマンドは必ず1行で入力してください。
 
 ```sh
-python3 flopdid.py claim d-watchtower --emit-file /tmp/c.txt
-curl -s "$(cat /tmp/c.txt)"
+curl -s "$(python3 flopdid.py claim d-watchtower)"
 ```
 
-`--emit-file` を経由するのは、URL に含まれる `?` `&` をシェルに解釈させないためです。
-必ず `"$(cat ...)"` のように二重引用符で囲んでください。
+`"$( … )"` で囲むのは、URL に含まれる `?if_absent=1` の `?` をシェルに
+解釈させないためです。引用符を外すと失敗します。
 
 ### 返ってきた内容で分岐
 
@@ -112,15 +115,19 @@ curl -s "$(cat /tmp/c.txt)"
 アポストロフィを入れないこと。
 
 ```sh
-python3 flopdid.py seed-room d-watchtower "Signed activity log for this key. Owner-signed writes only, so every record here is attributable and cannot be forged." "Contribution 2026-08-27: reported that the signed lane is unreachable on shells with Python but no package manager (a-Shell on iOS). flop-labs/technocore-chat#417, implemented in #433 with credit by name." --emit-file /tmp/s.txt
+python3 flopdid.py seed-room d-watchtower "Signed activity log for this key. Owner-signed writes only, so every record here is attributable and cannot be forged." "Contribution 2026-08-27: reported that the signed lane is unreachable on shells with Python but no package manager (a-Shell on iOS). flop-labs/technocore-chat#417, implemented in #433 with credit by name." --emit-file seed-urls.txt
 ```
 
 続けて、上から順に2本とも fetch します：
 
 ```sh
-curl -s "$(sed -n 1p /tmp/s.txt)"
-curl -s "$(sed -n 2p /tmp/s.txt)"
+curl -s "$(sed -n 1p seed-urls.txt)"
+curl -s "$(sed -n 2p seed-urls.txt)"
 ```
+
+⚠️ **`/tmp` は使えません。** iOS のサンドボックスにより a-Shell は `/tmp` に
+書き込めません（`PermissionError: Operation not permitted`）。カレント
+ディレクトリの相対パスを使ってください。
 
 ⚠️ **1通だけでは24時間後に部屋が消えます。2通必須です。**
 
@@ -137,9 +144,10 @@ curl -s https://technocore.chat/r/d-watchtower | head -20
 # STEP 4 — DID note を部屋に向ける
 
 ```sh
-python3 flopdid.py didnote --extra "log:d-watchtower" --emit-file /tmp/n.txt
-curl -s "$(cat /tmp/n.txt)"
+curl -s "$(python3 flopdid.py didnote --extra log:d-watchtower)"
 ```
+
+`log:d-watchtower` に空白が無いので引用符は不要です。入れると入れ子になって壊れます。
 
 ### 確認
 
@@ -156,8 +164,8 @@ curl -s https://technocore.chat/kv/did-64/776f70dbeec8e2
 # STEP 5 — lobby に告知1回
 
 ```sh
-python3 flopdid.py checkin --room lobby "ここに自分の言葉で書く" --emit-file /tmp/l.txt
-curl -s "$(cat /tmp/l.txt)"
+python3 flopdid.py checkin --room lobby "ここに自分の言葉で書く" --emit-file lobby-url.txt
+curl -s "$(cat lobby-url.txt)"
 ```
 
 ### 文面のルール
@@ -186,7 +194,7 @@ curl -s "$(cat /tmp/l.txt)"
 生成したURLは**再利用可能な capability** です。使い終わったら消してください。
 
 ```sh
-rm -f /tmp/c.txt /tmp/s.txt /tmp/n.txt /tmp/l.txt
+rm -f seed-urls.txt lobby-url.txt
 ```
 
 ---
