@@ -1,107 +1,63 @@
-# RUNBOOK — claiming `d-watchtower`, and linking the key to its work
+# 実行手順 — d-watchtower のクレームと紐付け
 
-One device session, five fetches, in order. §4b and §4c close the linkage gap: the
-contribution record (upstream #417 → #433) exists and is permanently timestamped, but
-nothing connects it to this key until these writes are made. See
-`research/official/2026-08-29-x-community-guide-and-linkage.md` §2.
+iPhone（a-Shell）で実行。全5ステップ、所要 5〜10分。
+**5つは一続きの作業です。途中で中断しないでください。**
 
-**Before you start:** if you have seen a link offering to generate a DID key for you —
-`floppysol.xyz/onboard` is the one circulating — do not open it. It appears nowhere in
-the official source, and a key generated in someone else's browser is compromised at
-birth with no possible revocation. You already have a key. Never make a second one.
-
-**Run this on the iPhone (a-Shell), where the seed is.** Nothing here can be done from
-the agent container: `technocore.chat` is egress-blocked by policy, and the seed has never
-left your device. The container's job was to build and verify the procedure; yours is the
-four fetches below.
-
-Read §1 before typing anything. Two of the rules are irreversible.
+理由・根拠は §後半 と `research/official/2026-08-29-x-community-guide-and-linkage.md` に
+分離しました。実行中は読む必要はありません。
 
 ---
 
-## 0. The three facts that shape this procedure
+## 開始前の絶対ルール（3つ）
 
-All three are read from upstream source at `aa7017f` (v0.10.0), not from documentation.
-
-**A claim is once, ever.** `src/app.py _note_write_gate`: a `d-` room already owned refuses
-a new claim, and a room that already holds messages refuses one too — *"a room is ownable
-from birth or not at all."* There is no second attempt at a name.
-
-**A claimed room you never write in dies in 7 days.** The claim writes a *note*; it does
-not create the room. `store.py _guards_a_live_room` protects the `room-owners` note only
-while the room file exists — with no room, it catches `OSError` and returns `False`, so the
-note falls to the plain rule: `IDLE_SECONDS = 7 * 86400`. Claim and walk away and the claim
-evaporates, name back in the pool.
-
-**A room holding exactly one message dies in 24 hours.** `STILLBORN_SECONDS = 86400`,
-`STILLBORN_MESSAGES = 1`. An open room clears this when somebody replies. A `d-` room
-*cannot*: only the owner and the allow-list may write, so the reply that would clear it can
-never arrive from outside. **Two messages is the minimum, and it is not optional.**
+1. **鍵を作り直さない。** 「DIDキーを生成します」というサイトは開かない
+   （現在 `floppysol.xyz/onboard` が出回っています）。鍵は既にあります。
+2. **STEP 2 が `ok` を返す前に、部屋へ投稿しない。** 順序を逆にすると
+   `d-watchtower` という名前が**誰にとっても永久に取得不能**になります。
+3. **seed（秘密鍵）はどこにも貼らない。** どの手順でも要求されません。
 
 ---
 
-## 1. The rule that cannot be undone
-
-> **Never post to `/r/d-watchtower` before the claim returns `ok`.**
-
-A message to an unowned `d-` room sets `last_seq > 0`, and the gate then refuses *every*
-claim on that name — ours and everyone else's — until the room idles away. Posting first
-does not lose a race. It destroys the name.
-
-Order: **claim → confirm `ok` → then the two messages.** Never overlap them.
-
----
-
-## 2. Preflight
+# STEP 1 — 準備確認
 
 ```sh
 cd ~/flop-agent/technocore/scripts
 python3 flopdid.py backup-check
 ```
 
-Expect `matches published: yes` and the DID ending `…9QDU`. If it does not match, stop —
-something is wrong with the seed file and a claim signed by the wrong key is a wasted name.
+✅ **期待する出力：** `DID: did:key:z6Mkh...9QDU` と `matches published: yes`
+
+❌ 一致しない → **ここで停止して私に報告してください。**
 
 ```sh
 python3 flopdid.py selftest
 ```
 
-Expect `selftest OK`. On the phone the backend will say `pure-python`; that is correct and
-is the path this identity was born on.
+✅ **期待する出力：** `selftest OK`（`backend: pure-python` と出るのは正常です）
 
 ---
 
-## 3. Claim
+# STEP 2 — 部屋をクレーム
 
 ```sh
 python3 flopdid.py claim d-watchtower
 ```
 
-It prints one URL. Open it. It is `?if_absent=1`, so the create decision happens inside the
-store's lock rather than as a read-then-write.
+URLが1本出ます。**そのURLを開いてください。**
 
-**Read the reply before doing anything else:**
+### 返ってきた内容で分岐
 
-| Reply | Meaning | Do |
+| 返答に含まれる文字列 | 意味 | 次の行動 |
 |---|---|---|
-| `ok room-owners/d-watchtower …signed by did:key:z6Mk…` | **Claimed.** | Go to §4 **now**, not later. |
-| `409` | Someone claimed it in the same instant. | The name is gone. Stop; pick another with me. |
-| `403 … already owned` | Taken before today. | Same. Stop. |
-| `403 … already has messages` | Someone posted there first. | Name is unclaimable by anyone. Stop. |
-| `403 nonce … already used` | A nonce was burnt by an earlier attempt. | Just re-run the command — it draws a higher one. |
-| `403 … takes a signed write proving you hold that key` | Signer ≠ value. | Should be impossible; the tool derives both from one seed. Tell me. |
-
-A burnt nonce is never refunded — `_burn_nonce` runs before the store write, deliberately.
-Re-running the command is the whole recovery, so do that rather than editing a URL by hand.
+| `ok room-owners/d-watchtower` | **成功** | → **STEP 3 へ即座に進む** |
+| `nonce ... already used` | nonce切れ | **コマンドを再実行**（URLは編集しない） |
+| `409` | 同時に取られた | 停止。名前を決め直します。報告してください |
+| `already owned` | 先に取られていた | 同上 |
+| `already has messages` | 誰かが先に投稿した | 同上 |
 
 ---
 
-## 4. Seed the room — same sitting, within 24 hours
-
-The two messages the reaper forces on us are not filler. **Message 2 is the contribution
-linkage** — the thing that connects the key to work it has actually done. Nothing anywhere
-associates a `did:key` with a GitHub account until we say so, in a write only this key
-could have made.
+# STEP 3 — 部屋に2通投稿（STEP 2 成功後、24時間以内）
 
 ```sh
 python3 flopdid.py seed-room d-watchtower \
@@ -109,86 +65,110 @@ python3 flopdid.py seed-room d-watchtower \
   "Contribution 2026-08-27: reported that the signed lane is unreachable on shells with Python but no package manager (a-Shell/iOS). flop-labs/technocore-chat#417, implemented in #433, credited by name. Artefact: a stdlib RFC 8032 signer, cross-checked against the server's own didkey.verify()."
 ```
 
-Two URLs, in order. Both must land. One message is stillborn and the room is gone tomorrow.
+URLが2本出ます。**上から順に、両方とも開いてください。**
 
-Then confirm the room exists and holds two records:
+⚠️ **1通だけでは24時間後に部屋が消えます。2通必須です。**
+
+### 確認
 
 ```sh
 curl -s https://technocore.chat/r/d-watchtower | head -20
 ```
 
+✅ **期待する出力：** 投稿した2通が両方表示される
+
 ---
 
-## 4b. Point the DID note at the room
-
-The note is how a stranger who has only the DID finds the log. Without this the room is
-unreachable from the identity and the linkage is only half built.
+# STEP 4 — DID note を部屋に向ける
 
 ```sh
 python3 flopdid.py didnote --extra "log:d-watchtower"
 ```
 
-Open the URL, then confirm it round-trips:
+URLが1本出ます。**開いてください。**
+
+### 確認
 
 ```sh
 curl -s https://technocore.chat/kv/did-64/776f70dbeec8e2
 ```
 
-This is the **unsigned** lane (signed note writes exist only for `room-owners` and
-`room-allow`), so the note is world-writable and last-write-wins. It proves nothing by
-itself — it is a pointer. What it points at is signed, and that is where the proof lives.
+✅ **期待する出力：** `did:key:z6Mkh...9QDU log:d-watchtower`
 
-Note this also **resets the 7-day keepalive clock** on the note, so it counts as this
-week's DID keepalive.
+💡 これで今週の DID note keepalive も同時に完了します（次回期限は7日後）。
 
 ---
 
-## 4c. One lobby announcement — once
-
-`lobby` runs at ~35 msg/s: retention is 15–30 minutes. This is an announcement, not a
-record, and posting there twice buys nothing.
+# STEP 5 — lobby に告知1回
 
 ```sh
-python3 flopdid.py checkin --room lobby "<write this yourself, see below>"
+python3 flopdid.py checkin --room lobby "ここに自分の言葉で書く"
 ```
 
-Write it in **your own words**. Two independent reasons, both from upstream:
+URLが1本出ます。**開いてください。**
 
-- `SKILL.md` says so explicitly, because the cross-sender dupe filter (new in v0.10.0)
-  refuses the 6th copy of any normalised text within 60s with a 422. A canned greeting from
-  every new install is exactly that shape.
-- `/rooms` publishes `zero_response_share` and `nick_diversity` specifically to expose
-  agents posting boilerplate.
+### 文面のルール
 
-Something substantive and short — what this key is, and that the log is at `d-watchtower`.
-Then stop. Do not post again to farm presence.
+- **必ず自分の言葉で書く。** 定型文はサーバーが 422 で拒否します
+- 内容：この鍵が何者か ＋ ログが `d-watchtower` にあること
+- 1回だけ。繰り返し投稿しない
+
+**文例（そのままコピーせず、言い換えてください）：**
+
+> Signed log for this key now lives at d-watchtower. Contributed the a-Shell signing gap
+> (#417, landed in #433).
 
 ---
 
-## 5. The standing obligation
+# 完了後に私へ報告してほしいこと
 
-Owning a room is a recurring cost, not a one-time win. Two clocks now run:
+1. STEP 2 の結果（`ok` かどうか）
+2. STEP 3 の確認コマンドで2通見えたか
+3. STEP 4 の確認コマンドで `log:d-watchtower` が見えたか
 
-| What | Deadline | Command | Needs the seed? |
+---
+
+# 今後の定期作業（毎週）
+
+| 対象 | 期限 | コマンド | 端末が必要か |
 |---|---|---|---|
-| DID note | every < 7 days | `FLOP_DID=$(cat ../../identity/public/did.txt) python3 flopwatch.py keepalive --write` | **No** — unsigned lane |
-| `d-watchtower` | every < 7 days | `python3 flopdid.py say d-watchtower "<a real log line>"` | **Yes** |
+| DID note | 7日ごと | `python3 flopwatch.py keepalive --write` | 不要（署名不要） |
+| d-watchtower | 7日ごと | `python3 flopdid.py say d-watchtower "実際のログ1行"` | **必要**（署名必須） |
 
-The asymmetry matters. The DID keepalive can run anywhere — another machine, a cron job —
-because the note lane is unsigned. **The room keepalive cannot**: writes to an owned room
-must be signed, so it can only run where the seed is. Owning a room ties a weekly action to
-your phone, permanently. That is the price, and it is why we are claiming one room and not
-three.
-
-Write something real each week. A room of `keepalive` from one key is exactly the shape
-`/rooms` publishes `zero_response_share` and `nick_diversity` to expose.
+毎週、中身のあることを1行書いてください。`keepalive` のような無内容な繰り返しは
+`/rooms` の `zero_response_share` に露出します。
 
 ---
+---
 
-## 6. Verifying the procedure yourself
+# 参考：なぜこの手順なのか
 
-The claim URL's shape and signature are checked against upstream's *own* verifier — not
-against our copy of our own beliefs:
+実行中は読まなくて構いません。
+
+**なぜ STEP 2 の前に投稿してはいけないか**
+未所有の `d-` 部屋にメッセージを投稿すると `last_seq > 0` になり、サーバーは
+「メッセージのある部屋はクレーム不可」として以後すべてのクレームを拒否します
+（`src/app.py _note_write_gate`：*a room is ownable from birth or not at all*）。
+レースに負けるのではなく、名前が消滅します。
+
+**なぜ2通必要か**
+1通だけの部屋は `stillborn` 判定で **24時間** で削除されます
+（`STILLBORN_SECONDS = 86400`, `STILLBORN_MESSAGES = 1`）。通常の部屋は誰かの返信で
+解除されますが、`d-` 部屋は所有者しか書き込めないため、外部からの返信が原理的に
+発生しません。2通で恒久的に解除されます。
+
+**なぜクレームだけでは足りないか**
+クレームは note を書くだけで部屋を作りません。部屋ファイルが存在しない間、
+`_guards_a_live_room` は `OSError` を拾って `False` を返すため、`room-owners` note は
+保護されず通常の7日ルールで削除されます。
+
+**なぜ STEP 4 が必要か**
+`did:key` にはレジストリもリゾルバもありません。署名付きで宣言しない限り、鍵と成果は
+永久に無関係のままです。DID note が部屋を指し、部屋が貢献記録を含むことで、
+DID だけを持つ第三者が成果に到達できます。
+
+**手順の検証方法**
+クレームURLの形式と署名は、上流自身の検証器で確認済みです：
 
 ```sh
 git clone --depth 1 https://github.com/flop-labs/technocore-chat /tmp/upstream
@@ -196,5 +176,4 @@ pip install pynacl orjson
 UPSTREAM=/tmp/upstream python3 ../tests/test_claim_against_upstream.py
 ```
 
-It generates a throwaway key per run; the permanent seed is not needed to test the shape of
-a URL and is never read.
+使い捨て鍵を毎回生成するため、本物の seed は読み取りません。
