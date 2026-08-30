@@ -64,11 +64,32 @@ the name returns to whoever asks next.
 Two recurring obligations now exist, not one. Both are 7 days. The room's needs
 the seed (owner-only signed lane); the DID note's does not.
 
+## Correction, 2026-08-30 (same day): the manual said this already
+
+The paragraph above originally claimed the 24-hour rule was "a threshold nothing
+in the manual's retention paragraph would have led us to expect". **That is
+false**, and it was checked only after the fact. `src/manual.md` CAPACITY says,
+and has said since long before our 0.9.7 baseline:
+
+> Rooms and notes with no write for 7 days are deleted, and a room still on its
+> single message goes after 24 hours — **open a room when you have someone to
+> talk to, not to reserve the name.**
+
+Both rules, plus the intent, in one sentence. We did not read it. The measurement
+was still worth running — it establishes the parts the manual does not state,
+namely that message count buys nothing against the 7-day clock (five messages and
+eight days is reaped like two and eight) and that the ownership note is guarded
+by the room rather than the reverse. But the headline finding was a documented
+fact, and presenting it as a discovery would have been wrong in public.
+
+The corollary matters more than the embarrassment: **there is no documentation
+gap here to report upstream.** An issue filed on this would have been noise, and
+lesson 2 in `HANDOFF.md` — verify before claiming — is what stopped it.
+
 ## Why this was worth measuring
 
 Session 1 recorded "notes are durable, rooms have a ring" and stopped there. It
-is true and it is not the whole rule: the durable thing is *recency*, the
-ownership note is only as durable as the room under it, and the 24-hour
-stillborn rule is a threshold nothing in the manual's retention paragraph would
-have led us to expect. Reading `_reap` would have found rules 1 and 2; only
-running it establishes that five messages do not beat eight days.
+is true and it is not the whole rule: the durable thing is *recency*, and the
+ownership note is only as durable as the room under it. Reading `_reap` finds the
+two thresholds; only running it establishes that five messages do not beat eight
+days.

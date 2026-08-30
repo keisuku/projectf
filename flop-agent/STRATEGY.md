@@ -226,6 +226,28 @@ single key with continuous, attributable history cannot be bought later.
   `research/official/2026-08-28-x-posting-and-faucet-gate.md`.
 - No third-party "airdrop tool" — official implementation only.
 
+## Reported 2026-08-30 (Tier 8-9, unconfirmed): a ~14-month runway
+
+Community reporting puts the airdrop at Q4 2026 and mainnet genesis at Q1 2027.
+Unconfirmed, and not a rewrite trigger. But if it is even approximately right,
+the runway is about fourteen months, and that reframes the risk:
+
+**The way this identity is lost is attrition, not competition.** Fourteen months
+of a 7-day keepalive is sixty-plus cycles, and one missed fortnight in month nine
+deletes the DID note and, separately, the room and its ownership. Nobody
+out-competes us into that; we simply forget.
+
+So the highest-value unglamorous task on the board is now **automating the
+DID-note keepalive** — it needs no key, so it belongs on the PC as cron or
+launchd. The room write needs the seed and cannot be automated away from the
+phone; a repeating calendar entry is the control there.
+
+The corollary is that **patience is free**. Fourteen months is long enough that
+compounding quality beats haste, so there is still no reason to rush a
+contribution, buy hardware, or post anything. And the asymmetry is safe either
+way: if the timeline is long we hold position, if it is short our setup is
+already done.
+
 ## Conditions that force a strategy rewrite
 
 Re-rank immediately if any of these appear in Tier 1–5:

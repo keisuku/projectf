@@ -38,6 +38,22 @@ Consequences, which shape the whole plan:
 - Repo created **2026-08-13**; project announced **2026-08-18**. Today is day
   ~9 of public existence.
 
+## Third-party tools (Tier 9) — reported 2026-08-30
+
+`overheard-five.vercel.app` ("Overheard", by @Crypto_Pranjal) — a community
+explorer for Technocore: identity check, in-browser key creation, live rooms,
+a quiz, a signature verifier and a network visualisation. **Not a Flop Labs
+product**; the author states this. **Egress-blocked from this container, so it
+has not been inspected.** Assessment: `research/official/2026-08-30-overheard-third-party-tool.md`.
+
+Standing rule it does not change: no second DID, and the seed never enters a
+browser. Read-only viewers are fine; anything that signs is not.
+
+Reported alongside it, **all unconfirmed (Tier 8-9)**: airdrop Q4 2026, mainnet
+genesis target Q1 2027, 100% fair launch with no presale and no VC. These are
+recorded as reported. They do not satisfy any `STRATEGY.md` rewrite trigger,
+which still needs Tier 1-5.
+
 ## Impersonation watch
 
 `flop-labs-dev/technocore-chat` (created 2026-08-25, 0 stars) is a byte-identical
