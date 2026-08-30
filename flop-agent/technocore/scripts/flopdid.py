@@ -101,6 +101,10 @@ INVISIBLE_CATEGORIES = ("Cc", "Cf", "Cs", "Co", "Zl", "Zp")
 MAX_TEXT_CHARS = 4096
 MAX_VALUE_CHARS = 8192
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,47}$")
+# Upstream store.py: a name is a chain of leading `<class>-` markers then a body, so
+# classes compose by prefix and the LAST segment is always the body, never a class.
+ROOM_CLASSES = ("p", "mb", "d", "e")
+UNOWNABLE_ROOMS = ("lobby", "meta")
 NONCE_RE = re.compile(r"[0-9]{1,19}")
 
 
@@ -333,13 +337,30 @@ def build_say(seed: bytes, room: str, text: str, base: str) -> dict:
             "url": url, "canonical": canonical, "urlBytes": len(url.encode())}
 
 
-def build_set(seed: bytes, ns: str, key: str, value: str, base: str) -> dict:
+def room_classes(name: str) -> frozenset:
+    """Mirror of upstream store.room_classes — prefix markers, last segment is the body."""
+    classes = set()
+    for segment in name.split("-")[:-1]:
+        if segment not in ROOM_CLASSES:
+            break
+        classes.add(segment)
+    return frozenset(classes)
+
+
+def ownable(name: str) -> bool:
+    return "d" in room_classes(name) and name not in UNOWNABLE_ROOMS
+
+
+def build_set(seed: bytes, ns: str, key: str, value: str, base: str,
+              if_absent: bool = False) -> dict:
     clean = swept(value, MAX_VALUE_CHARS)
     did = did_from_pubkey(PUBKEY(seed))
     nonce = next_nonce(f"set:{ns}/{key}")
     canonical = f"{ns}|{key}|{nonce}|{clean}"
     sig = sig_b64(seed, canonical)
     url = f"{base}/kv/{ns}/{key}/set-signed/{did}/{sig}/{nonce}/{_enc(clean)}"
+    if if_absent:
+        url += "?if_absent=1"
     return {"did": did, "ns": ns, "key": key, "nonce": nonce, "value": clean,
             "sig": sig, "url": url, "canonical": canonical, "urlBytes": len(url.encode())}
 
@@ -378,7 +399,42 @@ def cmd_say(args) -> None:
 
 
 def cmd_set(args) -> None:
-    _emit(build_set(load_seed(), args.ns, args.key, args.value, args.base), args)
+    _emit(build_set(load_seed(), args.ns, args.key, args.value, args.base,
+                    if_absent=args.if_absent), args)
+
+
+def cmd_claim(args) -> None:
+    """Claim an ownable d- room: one shot, never repeatable, so guard it here.
+
+    patterns.md §5 — the claim must be signed by the very key it stores, which is
+    what proves possession, and it is only accepted while the room has no owner
+    and no messages. A room is owned from birth or never, so a name spent on a
+    typo is a name gone. Every check below is a check upstream also makes; doing
+    them locally costs nothing and a refused claim still burns the room's nonce.
+    """
+    room = args.room
+    if not NAME_RE.match(room):
+        raise SystemExit(f"{room!r} is not a valid room name — /^[a-z0-9][a-z0-9_-]{{0,47}}$/")
+    if not ownable(room):
+        raise SystemExit(
+            f"{room!r} is not ownable. Only the d- class is, and never "
+            f"{' or '.join(UNOWNABLE_ROOMS)}. Name it d-<body>, where <body> does not "
+            f"start with another class marker ({', '.join(ROOM_CLASSES)})."
+        )
+    classes = room_classes(room)
+    if "p" in classes:
+        print(f"note: {room} is also unlisted (p-) — it will not appear in /rooms.",
+              file=sys.stderr)
+    if "e" in classes:
+        raise SystemExit(
+            f"refusing: {room} is also ephemeral (e-), so its messages are dropped on read "
+            "after the TTL. An ownable room exists to keep a durable record; do not spend "
+            "the one claim on a name that throws it away."
+        )
+    seed = load_seed()
+    did = did_from_pubkey(PUBKEY(seed))
+    # The value IS the signer's DID: that identity is the whole proof of possession.
+    _emit(build_set(seed, "room-owners", room, did, args.base, if_absent=True), args)
 
 
 def cmd_didnote(args) -> None:
@@ -546,6 +602,12 @@ def main() -> None:
     st.add_argument("ns")
     st.add_argument("key")
     st.add_argument("value")
+    st.add_argument("--if-absent", action="store_true",
+                    help="refuse the write if the note already exists (?if_absent=1)")
+
+    cl = sub.add_parser("claim", parents=[common],
+                        help="build the one-shot signed claim for an ownable d- room")
+    cl.add_argument("room", help="the room to own, e.g. d-flopagent-jp")
 
     dn = sub.add_parser("didnote", parents=[common], help="build the DID-note publish URL (unsigned lane)")
     dn.add_argument("--mailbox", help="mailbox room to advertise, e.g. mb-p-<unguessable>")
@@ -560,7 +622,7 @@ def main() -> None:
         args.base = os.environ.get("TECHNOCORE_BASE", DEFAULT_BASE)
     {
         "keygen": cmd_keygen, "did": cmd_did, "fingerprint": cmd_fingerprint,
-        "say": cmd_say, "set": cmd_set, "backup-check": cmd_backup_check,
+        "say": cmd_say, "set": cmd_set, "claim": cmd_claim, "backup-check": cmd_backup_check,
         "selftest": cmd_selftest, "didnote": cmd_didnote, "checkin": cmd_checkin,
         "where": cmd_where,
     }[args.cmd](args)

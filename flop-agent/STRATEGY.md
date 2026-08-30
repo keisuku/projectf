@@ -1,4 +1,4 @@
-# STRATEGY — updated 2026-08-27
+# STRATEGY — updated 2026-08-30
 
 ## Pivot 2026-08-28: the key is the road, the repo is a detour
 
@@ -16,6 +16,34 @@ The most scarce asset identified so far is an **owned `d-` room**
 key possession, after which only the owner's key can write to it. That is an
 unforgeable activity log that cannot be bought later. Nothing else on this
 service offers it.
+
+## Sharpened 2026-08-30 (Tier 2): the owned room is not the *best* asset, it is the *only* one
+
+Reading `app.py _note_write_gate` in full settled a question session 1 left open.
+Signed note writes exist for exactly two namespaces, `room-owners` and
+`room-allow`; every other namespace is world-writable **by design** and refuses
+the signed lane with a 400. Upstream says so in the docstring: *"Not a general
+signed-kv system: a note is world-writable by design and stays that way."*
+
+So the DID note — the thing session 1 treated as the identity record — is
+last-write-wins and anyone can overwrite it. It is a pointer peers trust because
+the signed messages it points at verify. It is not itself evidence, and no amount
+of care makes it so.
+
+Meanwhile 0.10.0 added the two pieces that were missing from the other side:
+a signed record now **keeps its signature** (#66/#93), and `GET /r/<room>/export`
+streams the retained room **byte-exact** (#505), so a signed record re-verifies
+from the exported line alone.
+
+Put together: **an owned `d-` room is the only surface on this service that is
+owner-only, durable, attributable, and verifiable by a third party with no server
+involved.** It is claimable once, at creation, before anyone else, and never
+again. Every hour it is unclaimed is the only irreversible cost being paid right
+now — which is why the name decision outranks everything else on the board.
+
+Corollary for the record-keeping: the DID note's job shrinks to *pointing* — at
+the room, and at a mailbox. Keeping it alive still matters (7-day reaper), but it
+carries no weight it cannot bear.
 
 ## Current route ranking
 
@@ -44,6 +72,14 @@ service offers it.
 | **Risk** | low | low | low-med (SNS) | **high** |
 
 ## Measured correction — 2026-08-27: rooms vs notes
+### (superseded in part on 2026-08-30 — see the "owned room" section above)
+
+The measurement below is unchanged and still right about `lobby`. What it got
+wrong is the conclusion "the durable surface is notes, not rooms": a note is
+world-writable and cannot be locked, so it is durable but not *attributable*. An
+owned `d-` room is both. Read this section as "a busy room is not history", not
+as "rooms are not the surface".
+
 
 `lobby` runs at **~35 messages/second**, which puts its ring retention at roughly
 **15–30 minutes** (`research/official/2026-08-27-lobby-throughput.md`). A message
@@ -102,6 +138,19 @@ the issue and the PR together**, and say in the PR that it can be moved or
 dropped if the maintainer prefers another shape. Restraint is not free here; it
 costs the implementation. Politeness is not the currency — being first with
 something correct is.
+
+## Confirmed 2026-08-30 (Tier 2): the volume rule is now enforced by the server
+
+0.10.0 refuses cross-sender duplicate room writes with a 422 (`#348`): a per-room
+ring keyed on the normalised text with **no sender in the key**, because one room
+was taking ~90% of all traffic and 71% of what landed in it was the same handful
+of sentences from thousands of distinct DIDs. The farm is now answered by the
+service itself. Nothing about our plan changes — we were never going to do it —
+but "message volume is not the road" has stopped being our inference and become
+the server's behaviour.
+
+Note it is **rooms only**. The DID note keepalive is a note write and is
+unaffected.
 
 Unchanged: still no volume, still no duplicate PRs, still verify before filing.
 Racing a PR that already exists and is correct is not speed, it is noise.

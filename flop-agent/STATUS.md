@@ -1,4 +1,4 @@
-# STATUS — 2026-08-27 (updated: DID live)
+# STATUS — 2026-08-30 (updated: re-verified against upstream 0.10.0)
 
 ## Participation state
 
@@ -12,7 +12,10 @@
 | Testnet | **NOT STARTED** | No official start date. |
 | Miner / validator | Deferred | No specs published. |
 | GitHub contribution | **#417 landed in #433, credited by name** | Finding, verification and test design all shipped. Nothing outstanding. |
-| DID note keepalive | **DUE ~2026-09-03** | Reaped after 7 idle days. `flopwatch.py watch --write-keepalive`. |
+| DID note keepalive | **DUE ~2026-09-04** | Reaped after 7 idle days from the 2026-08-28 publish. `flopwatch.py keepalive --write`, or the ready URL in `technocore/READY-TO-RUN.md` §1. Needs no key. |
+| Owned `d-` room | **BLOCKED ON A NAME** | The claim is rehearsed and green against the real 0.10.0 server code. Only the name is undecided, and it is unrepeatable — see `DAILY_BRIEF.md`. |
+| Mailbox (`mb-p-…`) | NOT PUBLISHED | After the room claim. `READY-TO-RUN.md` §3. |
+| Toolkit vs upstream | **RE-VERIFIED 2026-08-30 @ `169ca89` (0.10.0)** | Both backends. Sweep proven identical over all 1,114,112 code points. Signatures accepted by the tightened `SIG_PATTERN`. |
 
 ## Why the DID was not generated in this container
 
@@ -34,11 +37,42 @@ command locally and the identity is yours from birth.
 
 ## Blocked on the human
 
-1. Generate the permanent key locally (one command — see `identity/README.md`).
-2. Back the seed up.
-3. Fetch the two onboarding URLs the tool prints.
+Every remaining item needs a device that can reach `technocore.chat`. The exact
+commands and URLs are in `technocore/READY-TO-RUN.md`.
 
-## Verified this session
+1. **Decide the `d-` room name**, then run the claim once. Unrepeatable; the
+   candidates and the recommendation are in `DAILY_BRIEF.md`.
+2. **Refresh the DID note** before ~2026-09-04. Needs no key.
+3. Publish a `mb-p-…` mailbox in the DID note, after (1).
+
+Closed: the key is generated, the seed is backed up, and the DID note is
+published and verified.
+
+## Verified 2026-08-30 (session 2)
+
+- Upstream re-read at `169ca89`, version `0.10.0` — ten commits past the baseline.
+  Full delta: `research/official/2026-08-30-upstream-0.10.0-delta.md`.
+- **0.10.0 tightened the signature encoding** (`SIG_PATTERN` now ends `[AQgw]`), so a
+  non-canonical signer 403s. Ours was already canonical: 3000/3000 accepted, all four
+  canonical tails observed.
+- **The sweep is identical, proven not sampled**: every Unicode code point
+  (1,114,112), 20,000 random strings, and the 4095/4096/4097 cap boundary, all compared
+  against upstream `store.clean_text()`. Zero mismatches.
+- **The full `d-` claim was rehearsed against the real upstream app** in-process, on a
+  throwaway store and an RFC 8032 test key: the claim lands, unsigned writes are
+  refused, a stranger's signed write is refused, a stranger's re-claim is refused, the
+  stored record re-verifies offline, and the room exports.
+  (`technocore/scripts/rehearse_claim.py` — committed, re-runnable.)
+- **The DID note cannot be protected.** `app.py _note_write_gate` accepts signed note
+  writes for `room-owners` and `room-allow` only; every other namespace is
+  world-writable by design and 400s on the signed lane. The DID note is a pointer, not
+  evidence — which is what makes the owned room the only durable, attributable surface.
+- **No testnet signal.** The `flop-labs` org still has exactly one repository; every
+  watch word in the repo's docs is an incidental hit. Latest tag `v0.9.7`.
+- `technocore.chat` and `flop.finance` re-tested: still `connect_rejected` (403) at the
+  proxy. A policy denial, not worked around.
+
+## Verified 2026-08-27 (session 1)
 
 - Official repo identified and read at `9a7399d6` (v0.9.7).
 - Protocol implemented and cross-checked against upstream `didkey.verify()` —
