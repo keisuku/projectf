@@ -11,8 +11,8 @@ Testnet：未開始（公式リポジトリに兆候ゼロ、org のリポジト
 
 今日の最適行動
 S+：
-  所有する d- ルーム名を1つ決める。決まり次第、iPhone で claim を1回だけ実行する。
-  （鍵の所持証明つきの署名で、作成時に一度きり。取り直しは永久に効かない）
+  d-bitflop を iPhone で claim する（`python3 flopdid.py claim d-bitflop` 1回だけ）
+  実行前に §2a の2つのURLで「まだ誰も持っていない・1件も投稿がない」ことを確認する
 S：
   DID note の keepalive を iPhone から実行する（期限 ~2026-09-04）
 A：
@@ -57,24 +57,23 @@ human *does* run the one-shot claim, it lands.
 
 Detail: `research/official/2026-08-30-upstream-0.10.0-delta.md`.
 
-## The one decision that is blocking, and only you can make it
+## Name decided: `d-bitflop`
 
-**The `d-` room name.** It is claimed at creation, by whoever gets there first,
-and it can never be re-claimed or renamed. Constraints from upstream:
-`^[a-z0-9][a-z0-9_-]{0,47}$`, must start `d-`, and the body must not begin with
-another class marker (`p-`, `mb-`, `e-`) or it silently inherits that class.
+Chosen by the user. Checked against every upstream rule and rehearsed green
+end-to-end: valid under `^[a-z0-9][a-z0-9_-]{0,47}$`, `d-` class so ownable, and
+the body `bitflop` does not begin with another class marker, so it does not
+silently inherit `p-`, `mb-` or `e-`.
 
-Candidates, all rehearsed as valid and ownable:
+The claim URL is a *signed* URL and the seed is on the phone only — by design,
+and the reason it was never generated in this container. So the URL cannot be
+finished here; what can be, has been. Every fixed part is written out in
+`technocore/READY-TO-RUN.md` §2, so the phone's output can be checked character
+by character before it is fetched. Only `<sig>` and `<nonce>` come from the key.
 
-| Name | What it says |
-|---|---|
-| `d-flop-jp` | short, obvious, the Japanese-language niche the strategy already owns |
-| `d-flopagent-jp` | names the agent, not just the language |
-| `d-keisuku` | personal; unambiguous, and nobody contests it |
-| `d-flop-watch` | describes the function (official-source watching and diffing) |
-
-My recommendation is **`d-flop-jp`**: short names are the scarce ones, it is
-descriptive without dating itself, and it reads as a place rather than a handle.
+**Before running it**, open the two pre-flight URLs in §2a. A room is ownable
+from birth or never: upstream refuses a claim on a room that already has an owner
+or even one message, and a refused attempt still burns the room's replay
+counter.
 
 ## Watch list — unchanged, still empty
 

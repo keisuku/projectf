@@ -97,7 +97,24 @@ reclaim = flopdid.build_set(
 )
 check("stranger's re-claim refused", client.get(reclaim["url"]), want=403)
 
-# 6. The stored record must carry its signature and re-verify with no server
+# 6. The allow-list is the other half of ownership, and it shares the room's
+#    replay counter with the claim (/kv/room-nonce/<room>), so a second write
+#    with a nonce the claim already burned is a 403. This is what pins that our
+#    local nonce scope matches the server's.
+allow = flopdid.build_set(
+    OWNER, "room-allow", ROOM,
+    flopdid.did_from_pubkey(flopdid.PUBKEY(STRANGER)), "",
+)
+if allow["nonce"] <= claim["nonce"]:
+    failures.append(
+        f"allow-list nonce {allow['nonce']} does not exceed the claim's {claim['nonce']} — "
+        "the two share /kv/room-nonce/<room> and must use one counter"
+    )
+check("owner writes the allow-list (nonce above the claim's)", client.get(allow["url"]))
+listed = flopdid.build_say(STRANGER, ROOM, "a write from the key the owner listed", "")
+check("a listed key may now write", client.get(listed["url"]))
+
+# 7. The stored record must carry its signature and re-verify with no server
 #    involved (upstream #66/#93) — that is what makes the room evidence.
 served = client.get(f"/r/{ROOM}?format=json")
 try:
@@ -110,7 +127,7 @@ try:
 except Exception as exc:  # noqa: BLE001 — any failure here is a real finding
     failures.append(f"offline re-verification failed: {exc}")
 
-# 7. The room must export byte-exact (upstream #505), so the log is portable.
+# 8. The room must export byte-exact (upstream #505), so the log is portable.
 export = check("GET /r/<room>/export streams the room", client.get(f"/r/{ROOM}/export"))
 if export.status_code == 200 and not export.headers.get("X-Room-Generation"):
     failures.append("export carries no X-Room-Generation header")

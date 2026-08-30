@@ -13,7 +13,7 @@
 | Miner / validator | Deferred | No specs published. |
 | GitHub contribution | **#417 landed in #433, credited by name** | Finding, verification and test design all shipped. Nothing outstanding. |
 | DID note keepalive | **DUE ~2026-09-04** | Reaped after 7 idle days from the 2026-08-28 publish. `flopwatch.py keepalive --write`, or the ready URL in `technocore/READY-TO-RUN.md` §1. Needs no key. |
-| Owned `d-` room | **BLOCKED ON A NAME** | The claim is rehearsed and green against the real 0.10.0 server code. Only the name is undecided, and it is unrepeatable — see `DAILY_BRIEF.md`. |
+| Owned `d-` room | **NAME DECIDED: `d-bitflop`** — claim not yet run | Rehearsed green end-to-end against real 0.10.0 code. Needs the seed, so it runs on the phone: `technocore/READY-TO-RUN.md` §2. |
 | Mailbox (`mb-p-…`) | NOT PUBLISHED | After the room claim. `READY-TO-RUN.md` §3. |
 | Toolkit vs upstream | **RE-VERIFIED 2026-08-30 @ `169ca89` (0.10.0)** | Both backends. Sweep proven identical over all 1,114,112 code points. Signatures accepted by the tightened `SIG_PATTERN`. |
 
@@ -40,8 +40,9 @@ command locally and the identity is yours from birth.
 Every remaining item needs a device that can reach `technocore.chat`. The exact
 commands and URLs are in `technocore/READY-TO-RUN.md`.
 
-1. **Decide the `d-` room name**, then run the claim once. Unrepeatable; the
-   candidates and the recommendation are in `DAILY_BRIEF.md`.
+1. **Claim `d-bitflop`** — one command on the phone, once, ever. Check the
+   pre-flight URLs first (§2a): a room that already has an owner or any message
+   can never be claimed.
 2. **Refresh the DID note** before ~2026-09-04. Needs no key.
 3. Publish a `mb-p-…` mailbox in the DID note, after (1).
 

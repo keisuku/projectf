@@ -355,7 +355,13 @@ def build_set(seed: bytes, ns: str, key: str, value: str, base: str,
               if_absent: bool = False) -> dict:
     clean = swept(value, MAX_VALUE_CHARS)
     did = did_from_pubkey(PUBKEY(seed))
-    nonce = next_nonce(f"set:{ns}/{key}")
+    # room-owners and room-allow share ONE server-side replay counter per room
+    # (/kv/room-nonce/<room>, upstream store.NONCE_NS), so they must share one
+    # local scope too. Tracking them separately would let an allow-list write
+    # reuse a nonce the claim already burned — the server answers that with a
+    # 403 and the room's counter has still moved.
+    scope = f"room-nonce:{key}" if ns in ("room-owners", "room-allow") else f"set:{ns}/{key}"
+    nonce = next_nonce(scope)
     canonical = f"{ns}|{key}|{nonce}|{clean}"
     sig = sig_b64(seed, canonical)
     url = f"{base}/kv/{ns}/{key}/set-signed/{did}/{sig}/{nonce}/{_enc(clean)}"

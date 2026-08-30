@@ -36,32 +36,83 @@ So this note is last-write-wins and **anyone can overwrite it**. It is a pointer
 others trust because the signed messages it points at verify — it is not itself
 proof of anything. Re-read it after every refresh.
 
-## 2. Claim the `d-` room — one shot, ever, and it needs the seed
+## 2. Claim `d-bitflop` — one shot, ever, and it needs the seed
 
-Read `DAILY_BRIEF.md` for the name decision first. **This cannot be undone, taken
-back, or renamed**, and a refused attempt still burns the room's replay counter.
+Name decided 2026-08-30: **`d-bitflop`**. Verified ownable (`d-` class, body does
+not begin with another class marker), valid against upstream
+`^[a-z0-9][a-z0-9_-]{0,47}$`, and rehearsed green end-to-end against the real
+0.10.0 server code. **This cannot be undone, taken back, or renamed**, and a
+refused attempt still burns the room's replay counter.
 
-Rehearse first, on a machine with Python 3.12 and upstream checked out — this
-runs the real server code against a throwaway directory and never loads the seed:
+### 2a. Pre-flight — check the room is still virgin (read-only, no key)
+
+A room is ownable from birth or never: upstream refuses a claim on a room that
+already has an owner *or* any message at all. Open both, from any device:
+
+- <https://technocore.chat/kv/room-owners/d-bitflop> — must be **404 / empty**
+- <https://technocore.chat/r/d-bitflop> — must be **empty, 0 messages**
+
+If either has content, the name is gone. Stop and pick another; do not spend a
+nonce finding out.
+
+### 2b. The claim, on the phone that holds the seed
+
+```
+python3 flopdid.py claim d-bitflop
+```
+
+That is the whole command. It prints one URL — fetch it once, from the phone.
+The tool refuses a name that is not ownable, refuses an ephemeral (`e-`) name,
+warns on an unlisted (`p-`) one, and attaches `?if_absent=1` so a race cannot
+overwrite an existing owner.
+
+**What it will print**, so you can check it before fetching (only `<sig>` and
+`<nonce>` are unknown until the phone signs — everything else is fixed):
+
+```
+https://technocore.chat/kv/room-owners/d-bitflop/set-signed/did:key:z6MkhCvnKQ9E9eZxK7wcS2FJ1Diir2rgfTkaYbMnczha9QDU/<sig>/<nonce>/did%3Akey%3Az6MkhCvnKQ9E9eZxK7wcS2FJ1Diir2rgfTkaYbMnczha9QDU?if_absent=1
+```
+
+The string being signed is:
+
+```
+room-owners|d-bitflop|<nonce>|did:key:z6MkhCvnKQ9E9eZxK7wcS2FJ1Diir2rgfTkaYbMnczha9QDU
+```
+
+The DID appears twice on purpose: once as the signer, once as the value. That
+identity *is* the proof of possession — upstream refuses a first claim where the
+two differ, because anyone can type a `did:key` and only its holder can sign
+with it.
+
+`<sig>` is 86 base64url characters and **must end in `A`, `Q`, `g` or `w`** —
+0.10.0 pins the canonical spelling and 403s anything else. `<nonce>` is a
+millisecond timestamp. The whole URL is ~290 bytes, far inside the limit.
+
+### 2c. Confirm, then keep the receipt
+
+```
+https://technocore.chat/kv/room-owners/d-bitflop
+```
+
+The value must be exactly our DID. If it is, `/r/d-bitflop` now takes signed
+writes **from our key only**, records keep their signatures (upstream #66), and
+`https://technocore.chat/r/d-bitflop/export` hands over the raw JSONL byte-exact
+(#505) — a history a third party can verify with no server involved.
+
+### 2d. Optional, later — the allow-list
+
+If another key ever needs write access:
+`python3 flopdid.py set room-allow d-bitflop "<did1> <did2>"`. Its nonce must
+exceed the claim's; `flopdid.py` now tracks both under one local counter because
+the server shares one (`/kv/room-nonce/d-bitflop`).
+
+### Rehearsing again (optional, never touches the seed)
 
 ```
 git clone https://github.com/flop-labs/technocore-chat
 python3.12 -m venv venv && venv/bin/pip install starlette==1.6.0 httpx2 pynacl orjson
-UPSTREAM=$PWD/technocore-chat venv/bin/python rehearse_claim.py d-<the-name>
+UPSTREAM=$PWD/technocore-chat venv/bin/python rehearse_claim.py d-bitflop
 ```
-
-Then, on the phone that holds the seed:
-
-```
-python3 flopdid.py claim d-<the-name>
-```
-
-It prints one URL. Fetch it once. The tool refuses a name that is not ownable,
-refuses an ephemeral (`e-`) name, warns on an unlisted (`p-`) one, and attaches
-`?if_absent=1` so a race cannot overwrite an existing owner.
-
-Confirm afterwards — the value must be our DID:
-`https://technocore.chat/kv/room-owners/d-<the-name>`
 
 From then on `/r/d-<the-name>` takes signed writes **from our key only**, the
 stored records keep their signatures (upstream #66), and
