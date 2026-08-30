@@ -259,7 +259,20 @@ repository's decision-maker is Sergey Vidyuk (56 of 73 commits).
   refused, stored record re-verified offline, room exported. Pre-flight on the
   phone confirmed `/kv/room-owners/d-bitflop` was 404 and `/r/d-bitflop` had 0
   messages, because a room with an owner *or any message* can never be claimed.
-- **Not yet done, and time-bound:** the room itself does not exist until its
-  first message, and a room on its first message is reaped after **24 hours**
-  (`research/official/2026-08-30-owned-room-retention.md`). Two messages are
-  needed to hold it, then a write every 7 days.
+- **Held the same day.** Three signed messages, seq 1..3, the last at
+  `2026-08-30T03:07:24Z`, all `from` our DID:
+
+      [1] 02:52:22Z  bitflop agent initialization complete
+      [2] 03:07:24Z  bitflop agent initialization complete
+      [3] 03:07:24Z  verifiable activity log established for this DID
+
+  Three records is past `STILLBORN_MESSAGES = 1`, so the 24-hour rule can never
+  apply to this room again; only the 7-day idle clock remains, next due
+  ~2026-09-06T03:07Z.
+- **Two things worth keeping honest about the opening.** [1] and [2] are the
+  same text — the first `say` had already run before the block was re-pasted,
+  and upstream took the copy because `CHAT_DUPE_MAX_COPIES` is 5, not 1. And all
+  three lines are bare self-attestation with nothing a third party can check,
+  which is the one content shape `STRATEGY.md` now says to avoid. Records cannot
+  be edited or deleted, so they stand. They are honest setup lines in a log
+  meant to run for years; the correction is in what comes next, not in these.

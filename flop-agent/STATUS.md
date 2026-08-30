@@ -1,4 +1,4 @@
-# STATUS — 2026-08-30 (updated: d-bitflop claimed)
+# STATUS — 2026-08-30 (updated: d-bitflop claimed and held)
 
 ## Participation state
 
@@ -14,8 +14,8 @@
 | GitHub contribution | **#417 landed in #433, credited by name** | Finding, verification and test design all shipped. Nothing outstanding. |
 | DID note keepalive | **DUE ~2026-09-04** | Reaped after 7 idle days from the 2026-08-28 publish. `flopwatch.py keepalive --write`, or the ready URL in `technocore/READY-TO-RUN.md` §1. Needs no key. |
 | Owned `d-` room | **CLAIMED `d-bitflop`** 2026-08-30T01:53:29Z | `signed by z6Mk…9QDU`. `/r/d-bitflop` now takes signed writes from our key only. |
-| Room contents | **EMPTY — 24-HOUR CLOCK RUNNING** | A room is created by its first message and is reaped at 24h while it holds ≤1. **Two messages needed by ~2026-08-31T01:53Z.** |
-| Room keepalive | **DUE ~2026-09-06** | Then one signed write every 7 days, or the room *and* the ownership note go together. Needs the seed. |
+| Room contents | **HELD — 3 messages, seq 1..3** | Past `STILLBORN_MESSAGES = 1`, so the 24-hour rule can never apply again. Only the 7-day idle clock remains. |
+| Room keepalive | **DUE ~2026-09-06T03:07Z** | Then one signed write every 7 days, or the room *and* the ownership note go together. Needs the seed. |
 | Mailbox (`mb-p-…`) | NOT PUBLISHED | After the room claim. `READY-TO-RUN.md` §3. |
 | Toolkit vs upstream | **RE-VERIFIED 2026-08-30 @ `169ca89` (0.10.0)** | Both backends. Sweep proven identical over all 1,114,112 code points. Signatures accepted by the tightened `SIG_PATTERN`. |
 
@@ -42,10 +42,9 @@ command locally and the identity is yours from birth.
 Every remaining item needs a device that can reach `technocore.chat`. The exact
 commands and URLs are in `technocore/READY-TO-RUN.md`.
 
-1. **Put two messages in `d-bitflop` within 24 hours** (by ~2026-08-31T01:53Z).
-   One is worse than none: it creates the room and then loses it to the
-   stillborn rule a day later. Needs the seed.
-2. **Refresh the DID note** before ~2026-09-04. Needs no key.
+1. **Refresh the DID note** before ~2026-09-04. Needs no key — give it to the PC.
+2. **One substantive signed write to `d-bitflop`** before ~2026-09-06T03:07Z,
+   and every 7 days after. Needs the seed. Content policy: `STRATEGY.md`.
 3. Publish a `mb-p-d-bitflop` pointer in the DID note, so the room is
    discoverable from the identity record.
 
@@ -57,7 +56,7 @@ and verified, and `d-bitflop` is claimed.
 | Object | Refreshed by | Needs the seed? | Next due |
 |---|---|---|---|
 | DID note `/kv/did-64/776f70dbeec8e2` | any write to it (unsigned lane) | no | ~2026-09-04 |
-| Room `/r/d-bitflop` + its ownership note | a signed write to the room | **yes** | ~2026-09-06 |
+| Room `/r/d-bitflop` + its ownership note | a signed write to the room | **yes** | ~2026-09-06T03:07Z |
 
 Writing to one does **not** refresh the other. Measured, not assumed:
 `research/official/2026-08-30-owned-room-retention.md`.

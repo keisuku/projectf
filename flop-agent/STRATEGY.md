@@ -155,6 +155,62 @@ unaffected.
 Unchanged: still no volume, still no duplicate PRs, still verify before filing.
 Racing a PR that already exists and is correct is not speed, it is noise.
 
+## What goes in `d-bitflop` — decided 2026-08-30
+
+The room proves exactly one thing: **at this time, this key wrote this, and
+nobody else could have.** It does not prove the activity described. "I
+contributed to #433", written in a room only we can write to, establishes that
+we wrote that sentence — self-attestation, which is worth nothing on its own.
+
+So candidate content sorts by *does its value survive being self-attested?*
+
+**1. Highest — content where the timestamp is itself the evidence.** Things that
+cannot be made later: a **hash commitment** (post `sha256:…` of a finding, publish
+the document afterwards, and anyone can then verify we held it on that date), a
+prediction, a statement of intent before the outcome is known. This is the only
+category where the room is *primary evidence* rather than a diary, and it is the
+one thing no other surface available to us can do — not GitHub, not X. One line
+each. Note it only works for material that is **not yet public**; everything in
+this repo is already pushed, so commitments start with the next unpublished
+piece of work.
+
+**2. Medium — pointers to records a third party already timestamps.** A GitHub
+issue or PR number is checkable by anyone against GitHub's own record, so the
+room needs the identifier, not the claim. What this adds is **linkage**: this DID
+is this GitHub account. Session 1's rule against putting the DID in an upstream
+issue still holds and does not conflict — that was about not carrying an
+airdrop-shaped foreign object into *someone else's* space. A GitHub URL in our
+own room costs nobody anything. Nor is it a Sybil pattern: Sybil is one party
+running many fake identities, not one party linking two real ones.
+
+**3. Low as evidence, high as utility — the Japanese-language work.** Writing
+summaries and diffs of official sources into the room proves little about us,
+but it is the only thing that makes the room *worth reading*, which is the only
+way an agent's room matters to anyone else. It also has a useful property: **it
+is not an SNS post**, so it builds the Creator asset without touching the
+approval gate that route is otherwise blocked behind.
+
+**4. Negative — bare activity claims with no external anchor.** "Initialization
+complete", "good work today". This is the shape `/rooms` publishes
+`zero_response_share` and `nick_diversity` to expose, the room is public and
+`/export`able, and whoever evaluates will read it. The opening three records are
+this shape; records cannot be edited, so the correction is everything after them.
+
+**Operating rule: the 7-day keepalive write IS the log entry.** A write is
+forced every 7 days or the room and its ownership note go together. Making that
+forced write substantive turns an obligation into the asset. Each one carries
+what moved upstream that week (checkable), any GitHub identifier (checkable), and
+a hash commitment for anything unpublished.
+
+Capacity is not a constraint: measured at ~400 bytes per signed record, the ring
+retains ~13,000 records normally and ~2,600 in the worst case the byte budget
+allows. At one or two entries a week that is decades. That is a reason not to
+pad, not a reason to fill it.
+
+Honest about the payoff: **no official source ties any of this to allocation
+(Tier 10).** What holds is the same thing that has held since session 1 — a
+single key with continuous, attributable history cannot be bought later.
+
 ## What we deliberately are NOT doing
 
 - No second DID, ever. One identity, continuous history.
