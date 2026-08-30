@@ -26,6 +26,28 @@ reason is printed), `2` it never left the device (nothing was spent — retry).
 
 Plain reads have nothing to sign and are ordinary `curl`s.
 
+## Which device runs what
+
+Three environments are in play and they do not have the same powers. The split
+is not a preference — it follows from where the seed is.
+
+| | reaches technocore | holds the seed | so it can |
+|---|---|---|---|
+| **The agent's cloud container** | **no** (egress policy) | no | build URLs, verify against upstream, keep the records |
+| **A Claude Code session on the PC** | yes | **no** | every read, the DID-note keepalive, the whole watch |
+| **The iPhone (a-Shell)** | yes | **yes** | everything above, **plus** every signed write |
+
+So **§0 and the 7-day room write are phone-only**: they are owner-signed writes
+to `/r/d-bitflop`, and only the seed can produce them. Everything in §1 and §4 —
+the DID-note keepalive and the announcement watch — needs nothing but the public
+DID, so hand those to the PC and stop doing them by hand.
+
+**Do not move the seed to the PC to avoid this.** An agent with shell access on
+that machine can read any file on it, and this project's own rule is that the
+seed never reaches a model. The phone is the only place it is held by something
+that does not have an assistant reading its filesystem. A signed write is about
+thirty seconds a week; that is the price of the guarantee, and it is cheap.
+
 ---
 
 ## 0. HOLD THE ROOM — two messages, within 24 hours of the claim
