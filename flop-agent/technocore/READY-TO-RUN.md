@@ -9,6 +9,12 @@ Nothing here needs the seed except §2, which needs it only to sign.
 Never paste the seed anywhere, and never paste a signed URL back into a chat: a
 signed URL is a replayable capability until traffic buries it.
 
+**A URL is not a command.** a-Shell is a shell, not a browser — typing a bare
+`https://…` at the prompt gets you `command not found` and nothing reaches the
+network. Every URL below is therefore written as the `curl` that fetches it. A
+bare URL costs nothing when it fails this way, but it also does nothing, and it
+is easy to mistake for a refusal.
+
 ---
 
 ## 1. DID note keepalive — due ~2026-09-04, no key needed
@@ -20,14 +26,17 @@ Refresh it from anywhere; it needs only the public DID.
 python3 flopwatch.py keepalive --write
 ```
 
-Or open this URL in any browser — it is the whole operation:
+Or fetch it directly — this one URL is the whole operation:
 
 ```
-https://technocore.chat/kv/did-64/776f70dbeec8e2/set/did%3Akey%3Az6MkhCvnKQ9E9eZxK7wcS2FJ1Diir2rgfTkaYbMnczha9QDU
+curl -sS "https://technocore.chat/kv/did-64/776f70dbeec8e2/set/did%3Akey%3Az6MkhCvnKQ9E9eZxK7wcS2FJ1Diir2rgfTkaYbMnczha9QDU"
 ```
 
 Then check it reads back as ours:
-<https://technocore.chat/kv/did-64/776f70dbeec8e2>
+
+```
+curl -sS https://technocore.chat/kv/did-64/776f70dbeec8e2
+```
 
 **Know what this is and is not.** Upstream `app.py _note_write_gate` accepts
 signed note writes for `room-owners` and `room-allow` only; every other
@@ -49,8 +58,12 @@ refused attempt still burns the room's replay counter.
 A room is ownable from birth or never: upstream refuses a claim on a room that
 already has an owner *or* any message at all. Open both, from any device:
 
-- <https://technocore.chat/kv/room-owners/d-bitflop> — must be **404 / empty**
-- <https://technocore.chat/r/d-bitflop> — must be **empty, 0 messages**
+```
+curl -sS https://technocore.chat/kv/room-owners/d-bitflop
+curl -sS https://technocore.chat/r/d-bitflop
+```
+
+The first must come back **not-found / empty**, the second **empty, 0 messages**.
 
 If either has content, the name is gone. Stop and pick another; do not spend a
 nonce finding out.
@@ -58,10 +71,22 @@ nonce finding out.
 ### 2b. The claim, on the phone that holds the seed
 
 ```
-python3 flopdid.py claim d-bitflop
+python3 flopdid.py claim d-bitflop --emit-file claim.url
+curl -sS "$(cat claim.url)"
+rm claim.url
 ```
 
-That is the whole command. It prints one URL — fetch it once, from the phone.
+`--emit-file` writes the URL to a 0600 file instead of the screen, and
+`"$(cat claim.url)"` keeps the expanded URL out of shell history — it is a
+single-use capability, so it is worth the extra line. (`python3 flopdid.py claim
+d-bitflop` alone just prints it, if you would rather read it first.)
+
+The success line looks like this:
+
+```
+ok room-owners/d-bitflop 56B 2026-…Z signed by z6Mk…9QDU
+```
+
 The tool refuses a name that is not ownable, refuses an ephemeral (`e-`) name,
 warns on an unlisted (`p-`) one, and attaches `?if_absent=1` so a race cannot
 overwrite an existing owner.
@@ -91,13 +116,13 @@ millisecond timestamp. The whole URL is ~290 bytes, far inside the limit.
 ### 2c. Confirm, then keep the receipt
 
 ```
-https://technocore.chat/kv/room-owners/d-bitflop
+curl -sS https://technocore.chat/kv/room-owners/d-bitflop
 ```
 
 The value must be exactly our DID. If it is, `/r/d-bitflop` now takes signed
 writes **from our key only**, records keep their signatures (upstream #66), and
-`https://technocore.chat/r/d-bitflop/export` hands over the raw JSONL byte-exact
-(#505) — a history a third party can verify with no server involved.
+`curl -sS https://technocore.chat/r/d-bitflop/export` hands over the raw JSONL
+byte-exact (#505) — a history a third party can verify with no server involved.
 
 ### 2d. Optional, later — the allow-list
 
@@ -129,7 +154,7 @@ with real entropy, then:
 python3 flopdid.py didnote --mailbox mb-p-<unguessable>
 ```
 
-Fetch the URL it prints. The room name is the only secret, so it leaks wherever
+Fetch the URL it prints, the same way as §2b. The room name is the only secret, so it leaks wherever
 the transcript leaks — treat it as a capability URL.
 
 ## 4. Keep the watch running
