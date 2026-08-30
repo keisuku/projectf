@@ -9,11 +9,22 @@ Nothing here needs the seed except §2, which needs it only to sign.
 Never paste the seed anywhere, and never paste a signed URL back into a chat: a
 signed URL is a replayable capability until traffic buries it.
 
-**A URL is not a command.** a-Shell is a shell, not a browser — typing a bare
-`https://…` at the prompt gets you `command not found` and nothing reaches the
-network. Every URL below is therefore written as the `curl` that fetches it. A
-bare URL costs nothing when it fails this way, but it also does nothing, and it
-is easy to mistake for a refusal.
+**Do not hand a signed URL to the shell.** Two failures look like a refusal from
+the server and are not — neither one reaches the network, so neither costs
+anything, but both stall the job:
+
+- a bare `https://…` at the prompt is `command not found` (a-Shell is a shell,
+  not a browser);
+- `curl "$(cat claim.url)"` needs command substitution, which a-Shell does not
+  implement, so curl is handed the literal `$(cat claim.url)` and answers
+  `curl: (3) URL rejected: Malformed input to a URL function`.
+
+So **signed writes use `--fetch`**, which sends the request from inside
+`flopdid.py` and prints only the server's reply. Its exit code says which of the
+three things happened: `0` the server accepted it, `1` the server refused it (the
+reason is printed), `2` it never left the device (nothing was spent — retry).
+
+Plain reads have nothing to sign and are ordinary `curl`s.
 
 ---
 
@@ -31,6 +42,9 @@ Or fetch it directly — this one URL is the whole operation:
 ```
 curl -sS "https://technocore.chat/kv/did-64/776f70dbeec8e2/set/did%3Akey%3Az6MkhCvnKQ9E9eZxK7wcS2FJ1Diir2rgfTkaYbMnczha9QDU"
 ```
+
+(This one is on the unsigned lane, so a plain `curl` is fine — there is no
+signature to protect and the URL is not a capability.)
 
 Then check it reads back as ours:
 
@@ -71,21 +85,26 @@ nonce finding out.
 ### 2b. The claim, on the phone that holds the seed
 
 ```
-python3 flopdid.py claim d-bitflop --emit-file claim.url
-curl -sS "$(cat claim.url)"
-rm claim.url
+python3 flopdid.py claim d-bitflop --fetch
 ```
 
-`--emit-file` writes the URL to a 0600 file instead of the screen, and
-`"$(cat claim.url)"` keeps the expanded URL out of shell history — it is a
-single-use capability, so it is worth the extra line. (`python3 flopdid.py claim
-d-bitflop` alone just prints it, if you would rather read it first.)
+That is the whole thing. The URL is never printed and never touches the shell,
+so there is nothing to quote, expand, or leave in history.
 
-The success line looks like this:
+Success looks like this:
 
 ```
+HTTP 200
 ok room-owners/d-bitflop 56B 2026-…Z signed by z6Mk…9QDU
 ```
+
+A refusal prints the server's own reason (`403 … already owned`, `409 note …
+already exists`, and so on) and exits `1`. If it exits `2`, nothing left the
+device and nothing was spent — retry when the network is back.
+
+If you would rather see the URL before it is sent, `python3 flopdid.py claim
+d-bitflop` prints it and sends nothing; then fetch it by pasting it directly
+after `curl -sS ` (paste the URL itself, never a `$(...)`).
 
 The tool refuses a name that is not ownable, refuses an ephemeral (`e-`) name,
 warns on an unlisted (`p-`) one, and attaches `?if_absent=1` so a race cannot
@@ -151,10 +170,9 @@ a third party can verify with no server involved.
 with real entropy, then:
 
 ```
-python3 flopdid.py didnote --mailbox mb-p-<unguessable>
+python3 flopdid.py didnote --mailbox mb-p-<unguessable> --fetch
 ```
-
-Fetch the URL it prints, the same way as §2b. The room name is the only secret, so it leaks wherever
+ The room name is the only secret, so it leaks wherever
 the transcript leaks — treat it as a capability URL.
 
 ## 4. Keep the watch running

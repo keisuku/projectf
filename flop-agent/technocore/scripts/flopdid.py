@@ -371,6 +371,46 @@ def build_set(seed: bytes, ns: str, key: str, value: str, base: str,
             "sig": sig, "url": url, "canonical": canonical, "urlBytes": len(url.encode())}
 
 
+def _send(url: str) -> int:
+    """GET the signed URL from here, and print what the server said.
+
+    This exists because handing a signed URL to a shell is where it goes wrong.
+    A bare `https://…` at a prompt is `command not found`; `curl "$(cat f)"`
+    needs command substitution, which restricted shells (a-Shell on iOS among
+    them) do not implement, and curl is then handed the literal `$(cat f)` and
+    answers `URL rejected: Malformed input to a URL function`. Neither failure
+    reaches the network, and both read like a refusal from the server.
+
+    The URL is never printed here — only the response. Every write on this
+    service is a plain GET, so this is the whole operation.
+    """
+    import urllib.error
+    import urllib.request
+
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "flopdid (participation agent; contact via github.com/keisuku)",
+        "Accept": "text/plain, application/json, */*",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read().decode("utf-8", "replace")
+            print(f"HTTP {resp.status}")
+            print(body.rstrip())
+            return 0 if 200 <= resp.status < 300 else 1
+    except urllib.error.HTTPError as exc:
+        # The server's refusals carry the reason in the body and are the most
+        # useful thing on the screen — print them rather than a status alone.
+        body = exc.read().decode("utf-8", "replace")
+        print(f"HTTP {exc.code}", file=sys.stderr)
+        print(body.rstrip(), file=sys.stderr)
+        return 1
+    except Exception as exc:  # DNS, TLS, egress policy, timeout
+        print(f"NOT SENT: {type(exc).__name__}: {exc}", file=sys.stderr)
+        print("Nothing reached the server, so nothing was spent. Retry from a "
+              "network that reaches this host.", file=sys.stderr)
+        return 2
+
+
 def _emit(result: dict, args) -> None:
     if getattr(args, "json", False):
         print(json.dumps(result, indent=2, ensure_ascii=False))
@@ -378,6 +418,8 @@ def _emit(result: dict, args) -> None:
     if result["urlBytes"] > 4096:
         print(f"warning: URL is {result['urlBytes']} bytes; the edge limit is ~16 KB "
               "and long non-Latin text may need the POST lane.", file=sys.stderr)
+    if getattr(args, "fetch", False):
+        raise SystemExit(_send(result["url"]))
     if getattr(args, "emit_file", None):
         p = Path(args.emit_file)
         fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -587,6 +629,9 @@ def main() -> None:
                         help="machine-readable output")
     common.add_argument("--emit-file", default=argparse.SUPPRESS,
                         help="write the URL to a 0600 file instead of stdout")
+    common.add_argument("--fetch", action="store_true", default=argparse.SUPPRESS,
+                        help="send the request from here and print the server's reply "
+                             "(the URL is never printed; needs a network that reaches the host)")
 
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0], parents=[common])
     sub = p.add_subparsers(dest="cmd", required=True)
