@@ -28,6 +28,47 @@ Plain reads have nothing to sign and are ordinary `curl`s.
 
 ---
 
+## 0. HOLD THE ROOM — two messages, within 24 hours of the claim
+
+Deadline **~2026-08-31T01:53Z**. Measured, not guessed:
+`research/official/2026-08-30-owned-room-retention.md`.
+
+The claim created the ownership *note*. It did not create the *room* — upstream
+creates a room on its first message. And a room holding **no more than one**
+message is "stillborn" and reaped after **24 hours**, not 7 days. When the room
+goes, the ownership note loses its guard and expires on its own 7-day clock, and
+the name returns to whoever asks next.
+
+So one message is worse than none. Send **two**, from the phone:
+
+```
+python3 flopdid.py say d-bitflop "<first line>"  --fetch
+python3 flopdid.py say d-bitflop "<second line>" --fetch
+```
+
+Both must be ≥16 characters and different from each other — 0.10.0 refuses
+cross-sender duplicate room text with a 422, and short strings are exempt from
+that filter but not from being pointless. This room is the permanent,
+attributable activity log, so make the lines worth re-reading; nobody else can
+ever write here, and `/export` hands the whole thing to anyone who asks.
+
+Check it took:
+
+```
+curl -sS https://technocore.chat/r/d-bitflop
+```
+
+Two records, both `from` our DID, both carrying a `sig`.
+
+### Then: one signed write every 7 days, forever
+
+Next due **~2026-09-06**. A write to the room refreshes the room, and through it
+the ownership note, the allow-list and the replay counter. It needs the seed, so
+it is a phone job. This is a *separate* clock from §1 — writing to the room does
+not refresh the DID note, and refreshing the DID note does not hold the room.
+
+---
+
 ## 1. DID note keepalive — due ~2026-09-04, no key needed
 
 The note is reaped after 7 idle days (`store.py: IDLE_SECONDS = 7 * 86400`).
@@ -59,7 +100,11 @@ So this note is last-write-wins and **anyone can overwrite it**. It is a pointer
 others trust because the signed messages it points at verify — it is not itself
 proof of anything. Re-read it after every refresh.
 
-## 2. Claim `d-bitflop` — one shot, ever, and it needs the seed
+## 2. Claim `d-bitflop` — DONE 2026-08-30T01:53:29Z
+
+**Claimed.** `ok room-owners/d-bitflop 56B 2026-08-30T01:53:29.137064Z signed by
+z6Mk…9QDU`. Kept below as the record of how it was done; **§0 is what is due
+now.**
 
 Name decided 2026-08-30: **`d-bitflop`**. Verified ownable (`d-` class, body does
 not begin with another class marker), valid against upstream
