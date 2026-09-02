@@ -33,6 +33,29 @@ Usage:
     python3 flopdid.py where             # print the exact seed path (and if it exists)
     python3 flopdid.py backup-check      # confirm the seed is readable + valid
     python3 flopdid.py selftest          # verify crypto against known vectors
+
+PRODUCTION WRITE GATE (HANDOFF.md §2.5, §5.4)
+--------------------------------------------
+`--fetch` sends the request from inside this tool. Against a loopback base
+(127.0.0.1 / localhost / ::1 — a locally hosted technocore-chat) it sends
+unconditionally: that is the test lane. Against any other host it is REFUSED
+unless three independent things are all present:
+
+    1. the `--production` flag on the command line,
+    2. `--approval <file>` — a one-time approval file the human writes, carrying
+       the SHA-256 of the exact body being sent (see `approval` below), and
+    3. an interactive confirmation on a TTY, typed after the tool has shown the
+       raw body, the swept body, the canonical bytes (hex), the nonce and the
+       signature.
+
+No environment variable is consulted by the gate, so none can relax it. The
+approval file is consumed (renamed) the moment the request is issued, so it can
+authorise at most one attempt. Every attempt — accepted, refused, or never sent —
+is appended to `<identity home>/logs/proof.log`, and an accepted room write is
+followed by an `/export` snapshot saved beside it.
+
+    python3 flopdid.py approval d-bitflop "<body>"      # print the approval JSON to write
+    python3 flopdid.py say d-bitflop "<body>" --fetch --production --approval approval-1.json
 """
 
 from __future__ import annotations
@@ -208,30 +231,69 @@ def sig_b64(seed: bytes, canonical: str) -> str:
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
 
-def _verify_own(pub: bytes, raw_sig: bytes, msg: bytes) -> None:
-    """Best-effort self-check with whatever verifier is installed.
+# RFC 8032 §7.1 TEST 1: the public key and the signature over the empty message.
+# Used to probe a verifier before trusting its verdict on our own signature.
+_RFC_PK = bytes.fromhex("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
+_RFC_SIG = bytes.fromhex(
+    "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155"
+    "5fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+)
 
-    PyNaCl is what the server itself verifies with, so it is preferred. If no
-    verifier is available we say so once rather than pretending we checked.
-    """
+
+def _verifiers() -> list:
+    """The installed verifiers that demonstrably work, PyNaCl first (it is what
+    the server verifies with). Each is probed on the RFC 8032 vector before it
+    is allowed a verdict: a broken build — `cryptography` without its
+    `_cffi_backend`, which dies in a pyo3 panic that is not even an `Exception`
+    — used to read as "our signature failed to verify" and refused every write
+    from a perfectly good key. A verifier that cannot pass a known-good vector
+    is absent, not a judge."""
+    found = []
     try:
+        from nacl.exceptions import BadSignatureError
         from nacl.signing import VerifyKey
 
-        VerifyKey(pub).verify(msg, raw_sig)
-        return
-    except ImportError:
+        VerifyKey(_RFC_PK).verify(b"", _RFC_SIG)
+        found.append(("pynacl", lambda pub, sig, msg: VerifyKey(pub).verify(msg, sig),
+                      BadSignatureError))
+    except BaseException:  # noqa: BLE001 — ImportError, a broken build, a pyo3 panic
         pass
-    except BaseException as exc:
-        raise SystemExit(f"REFUSING TO EMIT: self-verification failed ({exc}). "
-                         "The seed or the crypto backend is not sound.")
     try:
+        from cryptography.exceptions import InvalidSignature
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-        Ed25519PublicKey.from_public_bytes(pub).verify(raw_sig, msg)
-    except ImportError:
+        Ed25519PublicKey.from_public_bytes(_RFC_PK).verify(_RFC_SIG, b"")
+        found.append(("cryptography",
+                      lambda pub, sig, msg: Ed25519PublicKey.from_public_bytes(pub).verify(sig, msg),
+                      InvalidSignature))
+    except BaseException:  # noqa: BLE001
         pass
-    except BaseException as exc:
-        raise SystemExit(f"REFUSING TO EMIT: self-verification failed ({exc}).")
+    return found
+
+
+def _verify_own(pub: bytes, raw_sig: bytes, msg: bytes) -> None:
+    """Self-check with the first verifier that is known to work.
+
+    Only a verifier's own bad-signature verdict refuses the emit. Anything else
+    it raises mid-verify is unexpected after a passed probe and refuses too, but
+    says which verifier and why, so the failure is diagnosable rather than being
+    read as a bad key. If no verifier works, say so once and carry on: the
+    server is the final verifier either way.
+    """
+    for name, verify, bad_signature in _verifiers():
+        try:
+            verify(pub, raw_sig, msg)
+        except bad_signature:
+            raise SystemExit(f"REFUSING TO EMIT: {name} rejected our own signature. "
+                             "The seed or the signing backend is not sound.") from None
+        except BaseException as exc:  # noqa: BLE001
+            raise SystemExit(f"REFUSING TO EMIT: {name} failed while verifying our own "
+                             f"signature ({type(exc).__name__}: {exc}).") from None
+        return
+    if not getattr(_verify_own, "_warned", False):
+        _verify_own._warned = True  # type: ignore[attr-defined]
+        print("note: no working Ed25519 verifier installed (PyNaCl or cryptography); "
+              "the signature was not self-checked before emitting.", file=sys.stderr)
 
 
 # --- seed handling (never printed) ------------------------------------------
@@ -411,7 +473,286 @@ def _send(url: str) -> int:
         return 2
 
 
-def _emit(result: dict, args) -> None:
+# --- production write gate --------------------------------------------------
+#
+# HANDOFF.md §2.5: a write to technocore.chat happens only when the commander has
+# approved the body and the canonical bytes. §5.4 says how: a CLI flag, an
+# interactive confirmation, and a one-time approval file carrying the body's
+# hash, all three, and nothing in the environment can stand in for any of them.
+#
+# The gate keys on the destination, not on a mode switch: loopback is the test
+# lane and is never gated, everything else is production and always is. That
+# keeps the local technocore-chat E2E runnable without ceremony while making it
+# impossible to reach the live service by forgetting a flag.
+
+LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+LOGS_DIR = AGENT_ROOT / "logs"
+PROOF_LOG = LOGS_DIR / "proof.log"
+EXIT_GATE_REFUSED = 3  # distinct from 1 (server refused) and 2 (never sent)
+
+
+def is_loopback(base: str) -> bool:
+    """True only for a base URL whose host is the local machine itself.
+
+    The host must be the literal name `localhost` or a literal loopback IP
+    (127.0.0.0/8 or ::1). A hostname that merely *looks* local —
+    `127.0.0.1.nip.io`, `localhost.example` — resolves wherever its owner says,
+    so it is production, and the DNS answer is never consulted here.
+    """
+    import ipaddress
+
+    host = (urllib.parse.urlsplit(base).hostname or "").lower()
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def body_sha256(clean: str) -> str:
+    """The hash an approval file carries: SHA-256 of the swept body as UTF-8.
+
+    It is the swept body, not the raw argument, because the swept form is what
+    gets signed and stored; approving the raw text would let a zero-width
+    character change what lands without changing the hash.
+    """
+    return hashlib.sha256(clean.encode("utf-8")).hexdigest()
+
+
+def _write_kind(result: dict) -> str:
+    if "room" in result:
+        return "say"
+    if "ns" in result:
+        return "set"
+    return "note-unsigned"
+
+
+def _write_target(result: dict) -> str:
+    kind = _write_kind(result)
+    if kind == "say":
+        return result["room"]
+    if kind == "set":
+        return f"{result['ns']}/{result['key']}"
+    return result["notePath"]
+
+
+def _write_body(result: dict) -> str:
+    return result["text"] if "text" in result else result["value"]
+
+
+def _refuse(reason: str) -> int:
+    print("PRODUCTION WRITE REFUSED: " + reason, file=sys.stderr)
+    print("Nothing was sent and no nonce reached the server. See HANDOFF.md §2.5 / §5.4.",
+          file=sys.stderr)
+    return EXIT_GATE_REFUSED
+
+
+def _load_approval(path: str, result: dict, did: str) -> dict | str:
+    """Read and check the one-time approval file. Returns the approval, or the
+    reason it is not acceptable.
+
+    Every field is checked against what is about to be sent, so an approval for
+    one body, one target or one key cannot be reused for another. The file is
+    the human's artefact: this tool never writes one for production use, it only
+    prints what one should contain (`approval` command).
+    """
+    p = Path(path)
+    if not p.is_file():
+        return f"approval file {path!r} does not exist (a consumed one is renamed *.used-<utc>)"
+    try:
+        doc = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return f"approval file {path!r} is not readable JSON: {exc}"
+    if not isinstance(doc, dict):
+        return "approval file must hold a JSON object"
+    kind, target, body = _write_kind(result), _write_target(result), _write_body(result)
+    want = {"kind": kind, "target": target, "did": did, "sha256": body_sha256(body)}
+    for field, expected in want.items():
+        got = doc.get(field)
+        if not isinstance(got, str) or got.strip() != expected:
+            return (f"approval field {field!r} is {got!r}, but this write needs {expected!r}"
+                    + (" (SHA-256 of the swept body)" if field == "sha256" else ""))
+    if not isinstance(doc.get("approved_by"), str) or not doc["approved_by"].strip():
+        return "approval field 'approved_by' must name who approved this body"
+    expires = doc.get("expires")
+    if expires is not None:
+        import calendar
+
+        try:
+            exp = calendar.timegm(time.strptime(str(expires), "%Y-%m-%dT%H:%M:%SZ"))
+        except ValueError:
+            return f"approval field 'expires' {expires!r} is not YYYY-MM-DDTHH:MM:SSZ (UTC)"
+        if time.time() > exp:
+            return f"approval expired at {expires}"
+    if kind == "set" and result["ns"] in ("room-owners", "room-allow", "room-nonce"):
+        # HANDOFF.md §2.6: ownership notes are not touched until Phase 2 needs them.
+        if doc.get("ownership") is not True:
+            return (f"{result['ns']} is an ownership namespace (HANDOFF.md §2.6); the approval "
+                    "must carry \"ownership\": true to permit it")
+    return doc
+
+
+def _consume_approval(path: str) -> str:
+    """Rename the approval so it cannot authorise a second attempt. Done before
+    the request leaves, so an interrupted send cannot be replayed on retry."""
+    used = f"{path}.used-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
+    os.replace(path, used)
+    return used
+
+
+def _show_before_send(result: dict, host: str, raw_body: str, approval_path: str) -> None:
+    kind = _write_kind(result)
+    print("=" * 72)
+    print("PRODUCTION WRITE — review before confirming")
+    print(f"  host           : {host}")
+    print(f"  lane           : {kind}")
+    print(f"  target         : {_write_target(result)}")
+    print(f"  signer DID     : {result['did']}")
+    print(f"  body (as given): {raw_body!r}")
+    print(f"  body (swept)   : {_write_body(result)!r}")
+    print(f"  body sha256    : {body_sha256(_write_body(result))}")
+    if "canonical" in result:
+        canonical = result["canonical"].encode("utf-8")
+        print(f"  canonical      : {result['canonical']!r}")
+        print(f"  canonical hex  : {canonical.hex()}")
+        print(f"  nonce          : {result['nonce']}")
+        print(f"  signature      : {result['sig']}")
+    else:
+        print("  canonical      : (unsigned lane — no signature, world-writable note)")
+    print(f"  approval file  : {approval_path}  (will be consumed on send)")
+    print(f"  proof log      : {PROOF_LOG}")
+    print("=" * 72)
+
+
+def _proof_append(entry: dict) -> None:
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    fd = os.open(PROOF_LOG, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(fd, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def _get(url: str, timeout: int = 30) -> tuple[int, dict, str]:
+    """Plain GET for the post-write snapshot. Returns (status, headers, body);
+    a transport failure is (0, {}, reason) — the snapshot is evidence, not a
+    step that may abort the record of a write that already happened."""
+    import urllib.error
+    import urllib.request
+
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "flopdid (participation agent; contact via github.com/keisuku)",
+        "Accept": "application/json, application/x-ndjson, text/plain, */*",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, {k.lower(): v for k, v in resp.headers.items()}, \
+                resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        return exc.code, {k.lower(): v for k, v in exc.headers.items()}, \
+            exc.read().decode("utf-8", "replace")
+    except Exception as exc:  # noqa: BLE001 — any transport failure is data here
+        return 0, {}, f"{type(exc).__name__}: {exc}"
+
+
+def _snapshot_after_send(result: dict, base: str, stamp: str) -> dict:
+    """After an accepted room write: save the byte-exact /export beside the proof
+    log and locate our record (by nonce) in the JSON read, so the proof carries
+    the server-assigned (generation, seq, ts) the commander asks for."""
+    out: dict = {}
+    if _write_kind(result) != "say":
+        status, _, body = _get(f"{base}/kv/{_write_target(result)}")
+        out["readback"] = {"status": status, "body": body[:400]}
+        return out
+    room = result["room"]
+    status, headers, body = _get(f"{base}/r/{room}/export")
+    if status == 200:
+        path = LOGS_DIR / f"export-{room}-{stamp}.jsonl"
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(body)
+        out["export"] = {"file": str(path), "generation": headers.get("x-room-generation"),
+                         "lines": body.count("\n"), "sha256": hashlib.sha256(
+                             body.encode("utf-8")).hexdigest()}
+    else:
+        out["export"] = {"status": status, "error": body[:300]}
+    status, _, body = _get(f"{base}/r/{room}?format=json&limit=50")
+    if status == 200:
+        try:
+            view = json.loads(body)
+            out["room"] = {"generation": view.get("generation"), "last_seq": view.get("last_seq"),
+                           "count": view.get("count")}
+            for msg in view.get("messages", []):
+                if msg.get("nonce") == result["nonce"] and msg.get("from") == result["did"]:
+                    out["record"] = {k: msg.get(k) for k in ("seq", "ts", "nonce", "sig")}
+                    out["record"]["generation"] = view.get("generation")
+        except ValueError:
+            out["room"] = {"error": "read returned non-JSON"}
+    else:
+        out["room"] = {"status": status, "error": body[:300]}
+    return out
+
+
+def production_fetch(result: dict, args, raw_body: str) -> int:
+    """The only path by which `--fetch` reaches a non-loopback host."""
+    base = args.base
+    host = urllib.parse.urlsplit(base).hostname or base
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    entry = {
+        "ts": stamp, "host": host, "kind": _write_kind(result), "target": _write_target(result),
+        "did": result["did"], "body_raw": raw_body, "body_clean": _write_body(result),
+        "body_sha256": body_sha256(_write_body(result)),
+        "canonical": result.get("canonical"),
+        "canonical_hex": result["canonical"].encode("utf-8").hex() if "canonical" in result else None,
+        "nonce": result.get("nonce"), "sig": result.get("sig"), "backend": BACKEND,
+    }
+
+    def refused(reason: str) -> int:
+        entry.update({"outcome": "gate-refused", "reason": reason})
+        _proof_append(entry)
+        return _refuse(reason)
+
+    if not getattr(args, "production", False):
+        return refused(f"{host} is not loopback and --production was not given")
+    approval_path = getattr(args, "approval", None)
+    if not approval_path:
+        return refused("--approval <file> is required for a production write")
+    approval = _load_approval(approval_path, result, result["did"])
+    if isinstance(approval, str):
+        return refused(approval)
+    entry["approval"] = {"file": approval_path, "sha256": approval["sha256"],
+                         "approved_by": approval["approved_by"],
+                         "created": approval.get("created"), "note": approval.get("note")}
+    _show_before_send(result, host, raw_body, approval_path)
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return refused("interactive confirmation needs a TTY on stdin and stdout; "
+                       "a production write cannot be scripted or piped")
+    expected = _write_target(result)
+    try:
+        typed = input(f"Type the target exactly ({expected}) to send, anything else aborts: ")
+    except (EOFError, KeyboardInterrupt):
+        typed = ""
+    if typed.strip() != expected:
+        return refused("confirmation did not match; aborted by operator")
+    entry["approval"]["consumed_as"] = _consume_approval(approval_path)
+    code = _send(result["url"])
+    entry["http_exit"] = code
+    entry["outcome"] = {0: "accepted", 1: "server-refused", 2: "not-sent"}[code]
+    if code == 0:
+        entry["after"] = _snapshot_after_send(result, base, stamp)
+        rec = entry["after"].get("record")
+        if rec:
+            print(f"--> recorded: room={result.get('room')} generation={rec.get('generation')} "
+                  f"seq={rec.get('seq')} nonce={rec.get('nonce')} ts={rec.get('ts')}")
+        exp = entry["after"].get("export", {})
+        if exp.get("file"):
+            print(f"--> export snapshot: {exp['file']} (generation {exp.get('generation')}, "
+                  f"{exp.get('lines')} lines)")
+    _proof_append(entry)
+    print(f"--> proof: {PROOF_LOG} ({entry['outcome']})")
+    return code
+
+
+def _emit(result: dict, args, raw_body: str | None = None) -> None:
     if getattr(args, "json", False):
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return
@@ -419,7 +760,10 @@ def _emit(result: dict, args) -> None:
         print(f"warning: URL is {result['urlBytes']} bytes; the edge limit is ~16 KB "
               "and long non-Latin text may need the POST lane.", file=sys.stderr)
     if getattr(args, "fetch", False):
-        raise SystemExit(_send(result["url"]))
+        if is_loopback(args.base):
+            raise SystemExit(_send(result["url"]))
+        raise SystemExit(production_fetch(result, args, raw_body if raw_body is not None
+                                          else _write_body(result)))
     if getattr(args, "emit_file", None):
         p = Path(args.emit_file)
         fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -443,12 +787,48 @@ def cmd_fingerprint(args) -> None:
 
 
 def cmd_say(args) -> None:
-    _emit(build_say(load_seed(), args.room, args.text, args.base), args)
+    _emit(build_say(load_seed(), args.room, args.text, args.base), args, raw_body=args.text)
 
 
 def cmd_set(args) -> None:
     _emit(build_set(load_seed(), args.ns, args.key, args.value, args.base,
-                    if_absent=args.if_absent), args)
+                    if_absent=args.if_absent), args, raw_body=args.value)
+
+
+def cmd_approval(args) -> None:
+    """Print the approval JSON a production write of this exact body would need.
+
+    Deliberately prints rather than writes: the approval is the human's act, made
+    after the commander has approved the body, and writing it here would let one
+    command both propose and approve. The hash is over the swept body, which is
+    what will be signed and stored.
+    """
+    if args.kind == "say":
+        if not NAME_RE.fullmatch(args.target):
+            raise SystemExit(f"{args.target!r} is not a valid room name")
+        clean = swept(args.body, MAX_TEXT_CHARS)
+    else:
+        if "/" not in args.target:
+            raise SystemExit("for kind=set the target is <ns>/<key>")
+        clean = swept(args.body, MAX_VALUE_CHARS)
+    did = args.did
+    if not did and (PUBLIC_DIR / "did.txt").exists():
+        did = (PUBLIC_DIR / "did.txt").read_text().strip()
+    if not did:
+        # Last resort, and only for the public value: the seed is read to derive the DID.
+        did = did_from_pubkey(PUBKEY(load_seed()))
+    if not is_did_like(did):
+        raise SystemExit(f"not a valid did:key: {did!r}")
+    doc = {
+        "kind": args.kind, "target": args.target, "did": did, "sha256": body_sha256(clean),
+        "body_swept": clean, "approved_by": "<name of the approver>",
+        "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "expires": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 48 * 3600)),
+        "note": "one-time; consumed on send; the tool checks kind/target/did/sha256",
+    }
+    if args.kind == "set" and args.target.split("/", 1)[0] in ("room-owners", "room-allow"):
+        doc["ownership"] = False
+    print(json.dumps(doc, indent=2, ensure_ascii=False))
 
 
 def cmd_claim(args) -> None:
@@ -632,6 +1012,12 @@ def main() -> None:
     common.add_argument("--fetch", action="store_true", default=argparse.SUPPRESS,
                         help="send the request from here and print the server's reply "
                              "(the URL is never printed; needs a network that reaches the host)")
+    common.add_argument("--production", action="store_true", default=argparse.SUPPRESS,
+                        help="with --fetch: allow a non-loopback host, subject to --approval "
+                             "and an interactive confirmation (HANDOFF.md §5.4)")
+    common.add_argument("--approval", default=argparse.SUPPRESS,
+                        help="with --fetch --production: the one-time approval file carrying "
+                             "the SHA-256 of the swept body (see the `approval` command)")
 
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0], parents=[common])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -668,6 +1054,13 @@ def main() -> None:
     ci.add_argument("text")
     ci.add_argument("--room", default="lobby")
 
+    ap = sub.add_parser("approval", parents=[common],
+                        help="print the one-time approval JSON a production write would need")
+    ap.add_argument("target", help="room name for kind=say, or <ns>/<key> for kind=set")
+    ap.add_argument("body", help="the exact body that will be sent")
+    ap.add_argument("--kind", choices=("say", "set"), default="say")
+    ap.add_argument("--did", help="signer DID (default: identity/public/did.txt)")
+
     args = p.parse_args()
     if not getattr(args, "base", None):
         args.base = os.environ.get("TECHNOCORE_BASE", DEFAULT_BASE)
@@ -675,7 +1068,7 @@ def main() -> None:
         "keygen": cmd_keygen, "did": cmd_did, "fingerprint": cmd_fingerprint,
         "say": cmd_say, "set": cmd_set, "claim": cmd_claim, "backup-check": cmd_backup_check,
         "selftest": cmd_selftest, "didnote": cmd_didnote, "checkin": cmd_checkin,
-        "where": cmd_where,
+        "where": cmd_where, "approval": cmd_approval,
     }[args.cmd](args)
 
 

@@ -1,79 +1,42 @@
-# DAILY BRIEF — 2026-08-30 (day 3)
+# DAILY BRIEF — 2026-09-02 UTC / 09-03 JST (session 3: handoff to the d-bitflop executor)
 
 ```
 FLOP DAILY
 現在の状態：
-DID：OK（did:key:z6Mk…9QDU / note 公開済み・検証済み）
-Technocore：NG（このコンテナから egress ブロック — 2026-08-30 再確認）
-Testnet：未開始（公式リポジトリに兆候ゼロ、org のリポジトリは依然1つ）
-重要変更：あり（upstream 0.10.0 — 署名の綴りが1つに固定／署名レコードが sig を保持／
-　　　　　　room export 追加。そして DID note は仕様上ロック不可能と判明）
+DID：OK（did:key:z6Mk…9QDU。note の最終 refresh は 2026-08-28 以降 未確認 → ~09-04 期限）
+Technocore：NG（このコンテナから egress ブロック — 2026-09-02 再確認。読み書きとも人間の端末）
+Testnet：未開始（公式 org は technocore-chat と tclk の 2 リポジトリ。faucet/client の兆候なし）
+重要変更：あり（引き継ぎ書を直下に配置／本番 write ゲート実装・PR／upstream v0.11.4 に再検証／
+　　　　　　Codex の Phase 1 コードは本リポジトリに存在しない）
 
 今日の最適行動
 S+：
-  d-bitflop を iPhone で claim する（`python3 flopdid.py claim d-bitflop` 1回だけ）
-  実行前に §2a の2つのURLで「まだ誰も持っていない・1件も投稿がない」ことを確認する
+  d-bitflop の生存 write（期限 2026-09-06T03:07Z = 12:07 JST）。司令塔が本文 A/B/C から承認 →
+  人間が承認ファイルを作成 → 電話でゲート経由 `flopdid.py say d-bitflop … --fetch --production --approval`
 S：
-  DID note の keepalive を iPhone から実行する（期限 ~2026-09-04）
+  DID note の keepalive（~09-04）。鍵不要。常設承認とするかは司令塔判断
 A：
-  mb-p-<推測不能> のメールボックスを DID note に載せる
+  Codex Phase 1 コードの所在と鍵形式（identity.pem vs seed hex）の回答を Issue に
 
 今日はやらない：
-  GPU購入・miner準備／SNS投稿／DIDのX投稿／PR量産／2つ目のDID作成／
-  Technocoreでのメッセージ数稼ぎ（0.10.0 で重複投稿は 422 で弾かれるようになった）
+  本番への未承認 write／新 DID・新部屋／所有権 note への操作／hosted MCP 依存／
+  観測できていないデータで本文を作ること
 
 理由：
-  upstream を読み直した結果、この サービスで「所有者の鍵だけが書ける」面は
-  d- ルームただ1つだと確定した。DID note は設計上 world-writable で、署名lane は
-  room-owners / room-allow の2名前空間にしか存在しない（それ以外は 400）。
-  同時に 0.10.0 で「署名レコードが署名を保持」「ルームを byte-exact に export できる」
-  が入ったため、所有ルームは “第三者がサーバ抜きで検証できる履歴” になった。
-  買い直せない資産はこれだけで、しかも先着1回。名前を決めることが今日の律速。
+  消滅期限まで 3 日強。書く経路（ゲート）は実サーバー E2E で証明済みで、残るのは
+  「何を書くか」の承認と、seed を持つ端末での 1 回の実行だけ。
 ```
 
-## Executed this session (no network needed, all local and verified)
+## Done this session (all local, verified, no production access)
 
-The container still cannot reach `technocore.chat`, so this session spent its
-time on the one thing that can be done without it: making sure that when the
-human *does* run the one-shot claim, it lands.
-
-1. **Re-verified the toolkit against upstream `0.10.0`** — both crypto backends,
-   the server's own `didkey.verify()`, tamper rejection, wrong-text rejection,
-   nonce monotonicity. All green.
-2. **Proved the sweep identical, not sampled.** Every code point in Unicode
-   (1,114,112) plus 20,000 random strings plus the length boundary, compared
-   against upstream `store.clean_text()`. Zero mismatches.
-3. **Checked the tightened signature rule.** 0.10.0 pins `SIG_PATTERN` to a
-   canonical last character (`[AQgw]`); a non-canonical signer now 403s. Ours was
-   already canonical — 3000/3000 accepted, all four tails seen.
-4. **Rehearsed the whole claim against the real server code**, in-process, on a
-   throwaway root and a test-vector key: the claim URL our tool builds is
-   accepted, unsigned writes are refused, a stranger's signed write is refused, a
-   stranger's re-claim is refused, the stored record re-verifies offline, and the
-   room exports. Committed as `technocore/scripts/rehearse_claim.py`.
-5. **Added `flopdid.py claim`** — the one-shot claim with the guards that a
-   one-shot deserves: name shape, ownability, a refusal on an ephemeral (`e-`)
-   name, a warning on an unlisted (`p-`) one, and `?if_absent=1` by construction.
-
-Detail: `research/official/2026-08-30-upstream-0.10.0-delta.md`.
-
-## Name decided: `d-bitflop`
-
-Chosen by the user. Checked against every upstream rule and rehearsed green
-end-to-end: valid under `^[a-z0-9][a-z0-9_-]{0,47}$`, `d-` class so ownable, and
-the body `bitflop` does not begin with another class marker, so it does not
-silently inherit `p-`, `mb-` or `e-`.
-
-The claim URL is a *signed* URL and the seed is on the phone only — by design,
-and the reason it was never generated in this container. So the URL cannot be
-finished here; what can be, has been. Every fixed part is written out in
-`technocore/READY-TO-RUN.md` §2, so the phone's output can be checked character
-by character before it is fetched. Only `<sig>` and `<nonce>` come from the key.
-
-**Before running it**, open the two pre-flight URLs in §2a. A room is ownable
-from birth or never: upstream refuses a claim on a room that already has an owner
-or even one message, and a refused attempt still burns the room's replay
-counter.
+1. Root `HANDOFF.md` placed; `CLAUDE.md` (root and `flop-agent/`) point at it.
+2. Working branch fast-forwarded onto `claude/status-check-and-execute-u39wxk` — the
+   line that actually claimed and held `d-bitflop`.
+3. Upstream re-verified at `01c49fb` (v0.11.4): signing lane unchanged since 0.10.0.
+4. Real-server E2E (uvicorn, Python 3.12): claim → say → JSON → export → offline verify.
+5. Production write gate in `flopdid.py`, 29 tests, E2E through a non-loopback address.
+6. Latent bug fixed: a broken `cryptography` build no longer reads as a bad signature.
+7. Report with three body candidates: `reports/2026-09-02-phase1-handoff-report.md`.
 
 ## Watch list — unchanged, still empty
 

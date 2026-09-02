@@ -86,6 +86,56 @@ and the word is new to it**. A plain substring match on `token` hits
 `CHAT_STATS_TOKEN` on every page of the manual; a watcher that cries wolf on its
 own baseline is one you stop reading, which costs exactly the alert it exists for.
 
+## Production write gate — `flopdid.py … --fetch --production --approval <file>`
+
+`HANDOFF.md` §2.5: nothing is written to `technocore.chat` unless the commander has
+approved the body and the canonical bytes. §5.4 says how, and `flopdid.py` enforces it
+on the destination rather than on a mode switch:
+
+| destination of `--fetch` | what happens |
+|---|---|
+| loopback (`localhost`, `127.0.0.0/8`, `::1`) — a locally hosted technocore-chat | sent unconditionally: the test lane |
+| anything else | **refused (exit 3)** unless all three factors below are present |
+
+1. `--production` on the command line.
+2. `--approval <file>`: a JSON file the human writes **after** the commander approves,
+   carrying `kind`, `target`, `did`, `sha256` (SHA-256 of the **swept** body as UTF-8),
+   `approved_by`, and optionally `expires` (UTC `YYYY-MM-DDTHH:MM:SSZ`). Every field
+   is checked against the write about to happen. `python3 flopdid.py approval <room>
+   "<body>"` prints the JSON to start from; it never writes it. An ownership-namespace
+   write (`room-owners`, `room-allow`) additionally needs `"ownership": true`
+   (`HANDOFF.md` §2.6).
+3. A confirmation typed on a real TTY, after the tool has shown the raw body, the swept
+   body, the canonical string and its bytes in hex, the nonce and the signature. Piped
+   or scripted stdin is refused.
+
+No environment variable is read by the gate (a test asserts it structurally). The
+approval file is renamed `*.used-<utc>` the instant the request is issued — before the
+server answers — so one approval authorises one attempt, and a transport failure
+(exit 2) or a server refusal (exit 1) both require a fresh approval. That is deliberate.
+
+Every attempt, whatever its outcome, is appended to `<identity home>/logs/proof.log`
+(mode 600, JSONL): raw body, swept body, `body_sha256`, `canonical`, `canonical_hex`,
+`nonce`, `sig`, the approval, the outcome, and for an accepted room write the
+server-assigned `(generation, seq, ts)` plus a byte-exact `/export` snapshot saved
+beside it as `export-<room>-<utc>.jsonl` with its `X-Room-Generation` and SHA-256.
+Each exported line re-verifies offline with upstream `didkey.verify()` over
+`<room>|<nonce>|<text>`, which is the shape the tclk offline auditor (PR #25) reads.
+
+```bash
+# 1. the commander approves the exact body; the human writes the approval file
+python3 flopdid.py approval d-bitflop "<approved body>" > approval-1.json   # then fill approved_by
+# 2. on the phone that holds the seed
+python3 flopdid.py say d-bitflop "<approved body>" --fetch --production --approval approval-1.json
+```
+
+Tests: `tests/test_production_gate.py` (`python3 -m pytest flop-agent/technocore/tests
+-q`; stdlib only, network cut, RFC 8032 test key). E2E: run upstream locally on a
+non-loopback interface and point `--base` at it — the gate cannot tell it from
+production, which is the point.
+
 ## logs/
 
-Gitignored. Signed URLs are capabilities — never commit them.
+Gitignored. Signed URLs are capabilities — never commit them. `proof.log` and the
+`export-*.jsonl` snapshots live here too: they carry signatures and nonces, which are
+replay material while the record is inside the server's anti-replay window.

@@ -82,9 +82,39 @@ curl -sS https://technocore.chat/r/d-bitflop
 
 Two records, both `from` our DID, both carrying a `sig`.
 
-### Then: one signed write every 7 days, forever
+### Then: one signed write every 7 days, forever — through the gate
 
-Next due **~2026-09-06**. A write to the room refreshes the room, and through it
+Next due **2026-09-06T03:07Z (12:07 JST)**, from the last verified write
+(seq 3, `2026-08-30T03:07:24Z`). Since 2026-09-03 (JST) a production write is
+made only with a body the commander has approved (repo-root `HANDOFF.md` §2.5),
+and `flopdid.py` enforces that with three factors (`README.md` § Production write
+gate). The sequence on the phone:
+
+```
+python3 flopdid.py backup-check
+python3 flopdid.py approval d-bitflop "<the approved body, exactly>"
+```
+
+Copy the printed JSON into `approval-1.json` in the current directory and set
+`approved_by` to your name. Then:
+
+```
+python3 flopdid.py say d-bitflop "<the approved body, exactly>" --fetch --production --approval approval-1.json
+```
+
+It shows the raw body, the swept body, the canonical bytes (hex), the nonce and
+the signature, and asks you to type `d-bitflop`. Compare the `body sha256` line
+with the one in the approval; if they differ the tool has already refused. On
+`HTTP 200` it prints `--> recorded: … generation=… seq=… nonce=…` — report those
+three numbers — and saves `logs/proof.log` and `logs/export-d-bitflop-<utc>.jsonl`.
+Never paste the signature or the export into a chat: both are replay material
+until traffic buries the record.
+
+Without `--production` and the approval file the same command exits 3 and
+sends nothing. `--fetch` against `http://127.0.0.1:…` (a local server) needs
+neither — that is the test lane.
+
+A write to the room refreshes the room, and through it
 the ownership note, the allow-list and the replay counter. It needs the seed, so
 it is a phone job. This is a *separate* clock from §1 — writing to the room does
 not refresh the DID note, and refreshing the DID note does not hold the room.
