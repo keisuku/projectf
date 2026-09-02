@@ -49,3 +49,6 @@ proof.log
 approval*.json
 run-latest.json
 market-latest.json
+
+# Harness scratch: isolated subagent worktrees (auto-cleaned), never repository content
+.claude/worktrees/
