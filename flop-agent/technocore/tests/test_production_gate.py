@@ -569,3 +569,108 @@ def test_export_snapshot_is_the_exact_bytes_received(flopdid, monkeypatch):
     assert out["export"]["bytes"] == len(raw)
     assert oct(path.stat().st_mode & 0o777) == "0o600"
     assert out["room"] == {"generation": 7, "last_seq": 2, "count": 2}
+
+
+# ------------------------------------------------ Codex review round 2 on PR #1
+
+
+@pytest.mark.parametrize(
+    "placeholder", ["<name of the approver>", " <name of the approver> ", "<someone>"]
+)
+def test_the_printed_placeholder_approver_is_refused(
+    flopdid, tmp_path, monkeypatch, placeholder
+):
+    """The `approval` command prints a template on purpose; an unedited one
+    must not satisfy the approval factor."""
+    result, raw = _say(flopdid, PROD)
+    path = _approval(flopdid, tmp_path, result, approved_by=placeholder)
+    _tty(monkeypatch, flopdid, "d-gate-test")
+    code = _emit_code(flopdid, result, _args(PROD, production=True, approval=path), raw)
+    assert code == flopdid.EXIT_GATE_REFUSED and flopdid._test_sent == []
+    assert "placeholder" in _proof(flopdid)[-1]["reason"]
+    assert Path(path).exists()
+
+
+def test_the_approval_command_output_is_refused_until_edited(flopdid, tmp_path, capsys):
+    args = argparse.Namespace(
+        kind="say", target="d-gate-test", body="an unedited template", did=None
+    )
+    flopdid.cmd_approval(args)
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["approved_by"] == flopdid.APPROVER_PLACEHOLDER
+    result = flopdid.build_say(
+        bytes.fromhex(RFC_SEED), "d-gate-test", "an unedited template", PROD
+    )
+    verdict = flopdid._load_approval(str(_write(tmp_path, doc)), result, result["did"])
+    assert isinstance(verdict, str) and "placeholder" in verdict
+    doc["approved_by"] = "a real person"
+    verdict = flopdid._load_approval(str(_write(tmp_path, doc)), result, result["did"])
+    assert isinstance(verdict, dict)
+
+
+def _write(tmp_path, doc):
+    p = tmp_path / "template.json"
+    p.write_text(json.dumps(doc))
+    return p
+
+
+def test_two_snapshots_in_the_same_second_do_not_collide(flopdid, monkeypatch):
+    raw1, raw2 = b'{"seq":1}\n', b'{"seq":1}\n{"seq":2}\n'
+    bodies = iter([raw1, raw2])
+
+    def fake_get(url, timeout=30):
+        if url.endswith("/export"):
+            return 200, {"x-room-generation": "1"}, next(bodies)
+        return 200, {}, b'{"generation": 1, "last_seq": 2, "count": 2, "messages": []}'
+
+    monkeypatch.setattr(flopdid, "_get", fake_get)
+    first, _ = _say(flopdid, PROD)
+    second, _ = _say(flopdid, PROD)
+    assert first["nonce"] != second["nonce"]
+    out1 = flopdid._snapshot_after_send(first, PROD, "20990101T000000Z")
+    out2 = flopdid._snapshot_after_send(second, PROD, "20990101T000000Z")
+    f1, f2 = Path(out1["export"]["file"]), Path(out2["export"]["file"])
+    assert (
+        f1 != f2 and str(first["nonce"]) in f1.name and str(second["nonce"]) in f2.name
+    )
+    assert f1.read_bytes() == raw1 and f2.read_bytes() == raw2, (
+        "the first snapshot survives"
+    )
+
+
+def test_an_existing_snapshot_is_never_overwritten(flopdid, monkeypatch):
+    monkeypatch.setattr(
+        flopdid,
+        "_get",
+        lambda url, timeout=30: (200, {"x-room-generation": "1"}, b"x\n"),
+    )
+    result, _ = _say(flopdid, PROD)
+    out = flopdid._snapshot_after_send(result, PROD, "20990101T000000Z")
+    with pytest.raises(FileExistsError):
+        flopdid._snapshot_after_send(result, PROD, "20990101T000000Z")
+    assert Path(out["export"]["file"]).read_bytes() == b"x\n"
+
+
+@pytest.mark.parametrize("cmd", ["checkin", "say"])
+def test_the_raw_body_reaches_the_gate_from_every_room_command(
+    flopdid, monkeypatch, cmd
+):
+    """The confirmation screen and proof log show the body as typed AND as
+    swept; a command that forwarded only the swept form would hide exactly the
+    transformation the review exists to expose."""
+    seen = {}
+
+    def fake_emit(result, args, raw_body=None):
+        seen["raw"], seen["clean"] = raw_body, result["text"]
+
+    monkeypatch.setattr(flopdid, "_emit", fake_emit)
+    typed = "  a body with​zero-width and trailing spaces   "
+    if cmd == "checkin":
+        flopdid.cmd_checkin(
+            argparse.Namespace(text=typed, room="d-gate-test", base=PROD)
+        )
+    else:
+        flopdid.cmd_say(argparse.Namespace(room="d-gate-test", text=typed, base=PROD))
+    assert seen["raw"] == typed
+    assert seen["clean"] == "a body with zero-width and trailing spaces"
+    assert seen["raw"] != seen["clean"]

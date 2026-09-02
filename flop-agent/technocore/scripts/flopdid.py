@@ -515,6 +515,7 @@ def _send(url: str) -> int:
 # impossible to reach the live service by forgetting a flag.
 
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+APPROVER_PLACEHOLDER = "<name of the approver>"
 LOGS_DIR = AGENT_ROOT / "logs"
 PROOF_LOG = LOGS_DIR / "proof.log"
 EXIT_GATE_REFUSED = 3  # distinct from 1 (server refused) and 2 (never sent)
@@ -602,8 +603,14 @@ def _load_approval(path: str, result: dict, did: str) -> dict | str:
         if not isinstance(got, str) or got.strip() != expected:
             return (f"approval field {field!r} is {got!r}, but this write needs {expected!r}"
                     + (" (SHA-256 of the swept body)" if field == "sha256" else ""))
-    if not isinstance(doc.get("approved_by"), str) or not doc["approved_by"].strip():
+    approver = doc.get("approved_by")
+    if not isinstance(approver, str) or not approver.strip():
         return "approval field 'approved_by' must name who approved this body"
+    if approver.strip() == APPROVER_PLACEHOLDER or re.fullmatch(r"<.*>", approver.strip()):
+        # The `approval` command prints this placeholder on purpose: the file it
+        # prints must be edited by a person before it can authorise anything.
+        return ("approval field 'approved_by' is still the placeholder "
+                f"{approver.strip()!r}; a person must write their name there")
     expires = doc.get("expires")
     if expires is not None:
         import calendar
@@ -711,8 +718,12 @@ def _snapshot_after_send(result: dict, base: str, stamp: str) -> dict:
     if status == 200:
         # Raw bytes, binary mode, and the hash over those same bytes: the file
         # on disk IS the export, with no newline translation and no decoding.
-        path = LOGS_DIR / f"export-{room}-{stamp}.jsonl"
-        fd = _open_private(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
+        # The nonce is in the name because it is unique per room by
+        # construction (strictly increasing), where a one-second stamp is not;
+        # O_EXCL then makes overwriting an earlier snapshot impossible rather
+        # than merely unlikely, since a proof entry points at it by hash.
+        path = LOGS_DIR / f"export-{room}-{stamp}-{result['nonce']}.jsonl"
+        fd = _open_private(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
         with os.fdopen(fd, "wb") as fh:
             fh.write(body)
         out["export"] = {"file": str(path), "generation": headers.get("x-room-generation"),
@@ -907,7 +918,8 @@ def cmd_claim(args) -> None:
     seed = load_seed()
     did = did_from_pubkey(PUBKEY(seed))
     # The value IS the signer's DID: that identity is the whole proof of possession.
-    _emit(build_set(seed, "room-owners", room, did, args.base, if_absent=True), args)
+    _emit(build_set(seed, "room-owners", room, did, args.base, if_absent=True), args,
+          raw_body=did)
 
 
 def cmd_didnote(args) -> None:
@@ -927,10 +939,12 @@ def cmd_didnote(args) -> None:
         parts.append(f"mailbox:{args.mailbox}")
     if args.extra:
         parts.append(args.extra)
-    value = swept(" ".join(parts), MAX_VALUE_CHARS)
+    raw_value = " ".join(parts)
+    value = swept(raw_value, MAX_VALUE_CHARS)
     url = f"{args.base}/kv/{note_path(did)}/set/{_enc(value)}"
     _emit({"did": did, "notePath": f"/kv/{note_path(did)}", "value": value,
-           "url": url, "urlBytes": len(url.encode()), "lane": "unsigned (world-writable)"}, args)
+           "url": url, "urlBytes": len(url.encode()), "lane": "unsigned (world-writable)"},
+          args, raw_body=raw_value)
 
 
 def cmd_checkin(args) -> None:
@@ -941,7 +955,7 @@ def cmd_checkin(args) -> None:
     does not farm message counts.
     """
     seed = load_seed()
-    _emit(build_say(seed, args.room, args.text, args.base), args)
+    _emit(build_say(seed, args.room, args.text, args.base), args, raw_body=args.text)
 
 
 def cmd_where(args) -> None:

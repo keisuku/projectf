@@ -100,7 +100,8 @@ on the destination rather than on a mode switch:
 1. `--production` on the command line.
 2. `--approval <file>`: a JSON file the human writes **after** the commander approves,
    carrying `kind`, `target`, `did`, `sha256` (SHA-256 of the **swept** body as UTF-8),
-   `approved_by`, and optionally `expires` (UTC `YYYY-MM-DDTHH:MM:SSZ`). Every field
+   `approved_by` (a person's name; the printed placeholder is refused), and optionally
+   `expires` (UTC `YYYY-MM-DDTHH:MM:SSZ`). Every field
    is checked against the write about to happen. `python3 flopdid.py approval <room>
    "<body>"` prints the JSON to start from; it never writes it. An ownership-namespace
    write (`room-owners`, `room-allow`) additionally needs `"ownership": true`
@@ -122,7 +123,7 @@ Every attempt, whatever its outcome, is appended to `<identity home>/logs/proof.
 (forced to mode 600 on every open, JSONL): raw body, swept body, `body_sha256`, `canonical`, `canonical_hex`,
 `nonce`, `sig`, the approval, the outcome, and for an accepted room write the
 server-assigned `(generation, seq, ts)` plus a byte-exact `/export` snapshot saved
-beside it as `export-<room>-<utc>.jsonl` — the raw bytes received, written in binary
+beside it as `export-<room>-<utc>-<nonce>.jsonl` (never overwritten) — the raw bytes received, written in binary
 mode, hashed as those same bytes — with its `X-Room-Generation`, byte count and SHA-256.
 Each exported line re-verifies offline with upstream `didkey.verify()` over
 `<room>|<nonce>|<text>`, which is the shape the tclk offline auditor (PR #25) reads.
