@@ -110,6 +110,12 @@ three numbers — and saves `logs/proof.log` and `logs/export-d-bitflop-<utc>.js
 Never paste the signature or the export into a chat: both are replay material
 until traffic buries the record.
 
+If it prints `OUTCOME UNKNOWN` (exit 4), the reply was lost after the request
+left the phone. The tool then reads the room back and says whether the record is
+there. **Do not run the command again on your own** in that case: report the
+`--> read back:` line, and only if it says the write did not land is a second
+attempt (with a fresh approval) safe.
+
 Without `--production` and the approval file the same command exits 3 and
 sends nothing. `--fetch` against `http://127.0.0.1:…` (a local server) needs
 neither — that is the test lane.

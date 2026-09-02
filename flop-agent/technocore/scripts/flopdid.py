@@ -443,17 +443,52 @@ def _request(url: str, accept: str):
 
 
 def _opener():
-    """An opener that refuses every redirect, for both writes and the
-    post-write reads. `redirect_request` returning None makes urllib raise the
-    3xx as an HTTPError instead of following it, so the only host any request
-    from this tool reaches is the one in the URL that was built and gated."""
+    """An opener that uses no proxy and refuses every redirect, for both
+    writes and the post-write reads.
+
+    No proxy: urllib would otherwise honour `http_proxy` / `HTTPS_PROXY` from
+    the environment, and a proxy is handed the complete signed URL — a
+    capability. With `NO_PROXY` not covering loopback, an environment variable
+    alone could route an ungated test-lane write through a relay that can
+    replay it at technocore.chat. An empty ProxyHandler makes every request
+    connect directly to the host the gate classified. (Direct is also what the
+    phone and the PC do; an environment that can only reach the host through a
+    proxy simply cannot write from this tool, which is the safe failure.)
+
+    No redirect: `redirect_request` returning None makes urllib raise the 3xx
+    as an HTTPError instead of following it, so the only host any request from
+    this tool reaches is the one in the URL that was built and gated."""
     import urllib.request
 
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, req, fp, code, msg, headers, newurl):
             return None
 
-    return urllib.request.build_opener(NoRedirect)
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect)
+
+
+EXIT_INDETERMINATE = 4  # the request may have reached the server; the reply was lost
+
+
+def _never_reached(exc: BaseException) -> bool:
+    """True only when the failure provably happened before any byte of the
+    request left this machine: connection refused, no route, DNS failure, or a
+    TLS certificate rejected during the handshake. Everything else — a timeout,
+    a reset, a connection closed without a reply, a truncated body — may have
+    happened after the server stored the write, and is not "not sent"."""
+    import errno
+    import socket
+    import ssl
+
+    reason = getattr(exc, "reason", exc)
+    if isinstance(reason, (ConnectionRefusedError, socket.gaierror,
+                           ssl.SSLCertVerificationError)):
+        return True
+    if isinstance(reason, OSError) and reason.errno in (
+        errno.ECONNREFUSED, errno.EHOSTUNREACH, errno.ENETUNREACH, errno.EADDRNOTAVAIL,
+    ):
+        return True
+    return False
 
 
 def _send(url: str) -> int:
@@ -495,11 +530,21 @@ def _send(url: str) -> int:
                   "forwarded to a host the operator did not name.", file=sys.stderr)
         print(body.rstrip(), file=sys.stderr)
         return 1
-    except Exception as exc:  # DNS, TLS, egress policy, timeout
-        print(f"NOT SENT: {type(exc).__name__}: {exc}", file=sys.stderr)
-        print("Nothing reached the server, so nothing was spent. Retry from a "
-              "network that reaches this host.", file=sys.stderr)
-        return 2
+    except Exception as exc:  # noqa: BLE001 — every transport failure is classified below
+        if _never_reached(exc):
+            print(f"NOT SENT: {type(exc).__name__}: {exc}", file=sys.stderr)
+            print("Nothing reached the server, so nothing was spent. Retry from a "
+                  "network that reaches this host.", file=sys.stderr)
+            return 2
+        # A timeout, a reset, a connection closed before the reply, a truncated
+        # body: the request may have been stored. Saying "not sent" here would
+        # invite a resend, and a resend of an accepted write is a duplicate
+        # record that can never be removed.
+        print(f"OUTCOME UNKNOWN: {type(exc).__name__}: {exc}", file=sys.stderr)
+        print("The request was dispatched (or may have been) and the reply was lost. "
+              "The server may have stored it. Do NOT resend: read the room back "
+              "first and look for this nonce.", file=sys.stderr)
+        return EXIT_INDETERMINATE
 
 
 # --- production write gate --------------------------------------------------
@@ -748,6 +793,52 @@ def _snapshot_after_send(result: dict, base: str, stamp: str) -> dict:
     return out
 
 
+def _readback(result: dict, base: str) -> tuple[int, str, dict]:
+    """Settle an indeterminate send by reading the target back.
+
+    Returns (exit code, outcome, evidence). For a room write the room's newest
+    records are searched for our nonce and DID; for a note the value is
+    compared. Only a successful read that does not show the write says it did
+    not land — and even then a retry needs a fresh approval, which is the
+    point: nothing here can resend on its own.
+    """
+    if _write_kind(result) == "say":
+        status, _, body = _get(f"{base}/r/{result['room']}?format=json&limit=50")
+        if status == 200:
+            try:
+                view = json.loads(body.decode("utf-8"))
+            except ValueError:
+                return EXIT_INDETERMINATE, "indeterminate", {"error": "read returned non-JSON"}
+            for msg in view.get("messages", []):
+                if msg.get("nonce") == result["nonce"] and msg.get("from") == result["did"]:
+                    return 0, "accepted-by-readback", {
+                        k: msg.get(k) for k in ("seq", "ts", "nonce", "sig")
+                    } | {"generation": view.get("generation")}
+            return 2, "not-landed-by-readback", {"generation": view.get("generation"),
+                                                 "last_seq": view.get("last_seq")}
+        return EXIT_INDETERMINATE, "indeterminate", {
+            "status": status, "error": body[:300].decode("utf-8", "replace")}
+    status, _, body = _get(f"{base}/kv/{_write_target(result)}")
+    if status == 200:
+        text = body.decode("utf-8", "replace")
+        if _write_body(result) in text:
+            return 0, "accepted-by-readback", {"body": text[:400]}
+        return 2, "not-landed-by-readback", {"body": text[:400]}
+    return EXIT_INDETERMINATE, "indeterminate", {
+        "status": status, "error": body[:300].decode("utf-8", "replace")}
+
+
+def _proof_preflight() -> str | None:
+    """Prove the proof log can be written BEFORE anything is sent. A write
+    whose record cannot be kept must not happen; finding that out after the
+    server has stored it is too late. Returns the reason on failure."""
+    try:
+        os.close(_open_private(PROOF_LOG, os.O_WRONLY | os.O_CREAT | os.O_APPEND))
+    except OSError as exc:
+        return f"proof log {PROOF_LOG} is not writable ({exc})"
+    return None
+
+
 def production_fetch(result: dict, args, raw_body: str) -> int:
     """The only path by which `--fetch` reaches a non-loopback host."""
     base = args.base
@@ -764,9 +855,16 @@ def production_fetch(result: dict, args, raw_body: str) -> int:
 
     def refused(reason: str) -> int:
         entry.update({"outcome": "gate-refused", "reason": reason})
-        _proof_append(entry)
+        try:
+            _proof_append(entry)
+        except OSError as exc:
+            print(f"warning: could not record the refusal in {PROOF_LOG}: {exc}",
+                  file=sys.stderr)
         return _refuse(reason)
 
+    problem = _proof_preflight()
+    if problem:
+        return refused(problem)
     if not getattr(args, "production", False):
         return refused(f"{host} is not loopback and --production was not given")
     approval_path = getattr(args, "approval", None)
@@ -792,11 +890,30 @@ def production_fetch(result: dict, args, raw_body: str) -> int:
     entry["approval"]["consumed_as"] = _consume_approval(approval_path)
     code = _send(result["url"])
     entry["http_exit"] = code
-    entry["outcome"] = {0: "accepted", 1: "server-refused", 2: "not-sent"}[code]
+    entry["outcome"] = {0: "accepted", 1: "server-refused", 2: "not-sent",
+                        EXIT_INDETERMINATE: "indeterminate"}[code]
+    if code == EXIT_INDETERMINATE:
+        # The reply was lost after dispatch. Read the target back and let what
+        # the server holds decide, never the exception.
+        code, entry["outcome"], entry["readback"] = _readback(result, base)
+        print(f"--> read back: {entry['outcome']}")
+        if code == EXIT_INDETERMINATE:
+            print("--> STILL UNKNOWN: read the room back by hand before any retry; a retry "
+                  "needs a fresh approval and may duplicate an accepted record.")
+        elif code == 2:
+            print("--> the write did not land; a retry needs a fresh approval.")
     if code == 0:
-        entry["after"] = _snapshot_after_send(result, base, stamp)
-        rec = entry["after"].get("record")
-        if rec:
+        # The write happened. Whatever the snapshot does, the proof entry is
+        # appended: an audit record that depends on a second step succeeding
+        # is not an audit record.
+        try:
+            entry["after"] = _snapshot_after_send(result, base, stamp)
+        except Exception as exc:  # noqa: BLE001 — recorded, never fatal
+            entry["after"] = {"error": f"{type(exc).__name__}: {exc}"}
+            print(f"--> snapshot FAILED ({entry['after']['error']}); the write stands and "
+                  "is recorded below. Fetch /export by hand.", file=sys.stderr)
+        rec = entry["after"].get("record") or entry.get("readback")
+        if rec and "seq" in rec:
             print(f"--> recorded: room={result.get('room')} generation={rec.get('generation')} "
                   f"seq={rec.get('seq')} nonce={rec.get('nonce')} ts={rec.get('ts')}")
         exp = entry["after"].get("export", {})

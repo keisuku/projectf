@@ -119,6 +119,31 @@ Neither the write nor the post-write reads follow a redirect: a `3xx` is reporte
 a refusal (exit 1) and the signed URL is never forwarded to a host the operator did not
 name, so a local test server cannot bounce a test-lane write to production.
 
+Nor do they use a proxy: `http_proxy` / `HTTPS_PROXY` / `NO_PROXY` are ignored and every
+request connects directly to the host the gate classified, so an environment variable
+cannot hand the capability URL to a relay. An environment that can only reach the host
+through a proxy cannot write from this tool, which is the safe failure.
+
+Exit codes after the gate has passed, and what each one means for a retry:
+
+| exit | meaning | retry? |
+|---|---|---|
+| 0 | the server accepted the write | no |
+| 1 | the server refused it (its reason is printed; a nonce was still spent) | with a fresh approval |
+| 2 | provably never reached the server (connection refused, no route, DNS, TLS certificate) | with a fresh approval |
+| 4 | **outcome unknown**: dispatched but the reply was lost (timeout, reset, closed connection) | **never blindly** |
+
+On 4 the tool reads the target back itself and lets the server decide: the room's newest
+records are searched for this nonce and DID (`accepted-by-readback`, exit 0), a
+successful read that lacks it means it did not land (`not-landed-by-readback`, exit 2),
+and a failed read leaves it `indeterminate` (exit 4) with the instruction to read the
+room by hand before any retry. A duplicate of an accepted record can never be removed.
+
+Before anything is sent the tool proves it can append to `proof.log`; if it cannot, the
+write is refused and the approval is left untouched. After an accepted write the proof
+entry is appended whether or not the snapshot succeeds — a failed snapshot is recorded
+in the entry, never allowed to lose it.
+
 Every attempt, whatever its outcome, is appended to `<identity home>/logs/proof.log`
 (forced to mode 600 on every open, JSONL): raw body, swept body, `body_sha256`, `canonical`, `canonical_hex`,
 `nonce`, `sig`, the approval, the outcome, and for an accepted room write the

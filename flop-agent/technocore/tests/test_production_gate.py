@@ -674,3 +674,177 @@ def test_the_raw_body_reaches_the_gate_from_every_room_command(
     assert seen["raw"] == typed
     assert seen["clean"] == "a body with zero-width and trailing spaces"
     assert seen["raw"] != seen["clean"]
+
+
+# ------------------------------------------------ Codex review round 3 on PR #1
+
+
+class _ProxyRecorder(_Recorder):
+    hits: list[str] = []
+
+    def do_GET(self):
+        _ProxyRecorder.hits.append(self.path)
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"relayed\n")
+
+
+def test_environment_proxies_are_never_used(flopdid, monkeypatch):
+    """`http_proxy` in the environment must not see the signed URL, even for the
+    loopback lane and even with NO_PROXY unset."""
+    _Recorder.hits.clear()
+    _ProxyRecorder.hits.clear()
+    target, proxy = _serve(_Recorder), _serve(_ProxyRecorder)
+    try:
+        for var in ("no_proxy", "NO_PROXY"):
+            monkeypatch.delenv(var, raising=False)
+        for var in (
+            "http_proxy",
+            "HTTP_PROXY",
+            "https_proxy",
+            "HTTPS_PROXY",
+            "all_proxy",
+        ):
+            monkeypatch.setenv(var, f"http://127.0.0.1:{proxy.server_address[1]}")
+        result, _ = _say(flopdid, f"http://127.0.0.1:{target.server_address[1]}")
+        assert flopdid._real_send(result["url"]) == 0
+        assert _ProxyRecorder.hits == [], "the proxy never saw the capability URL"
+        assert len(_Recorder.hits) == 1 and _Recorder.hits[0].startswith(
+            "/r/d-gate-test/say-signed/"
+        )
+        status, _, _ = flopdid._real_get(
+            f"http://127.0.0.1:{target.server_address[1]}/r/x/export"
+        )
+        assert status == 200 and _ProxyRecorder.hits == []
+    finally:
+        target.shutdown()
+        proxy.shutdown()
+
+
+def test_connection_refused_is_not_sent(flopdid, capsys):
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    result, _ = _say(flopdid, f"http://127.0.0.1:{port}")
+    assert flopdid._real_send(result["url"]) == 2
+    assert "NOT SENT" in capsys.readouterr().err
+
+
+def test_a_reply_lost_after_dispatch_is_indeterminate_not_unsent(flopdid, capsys):
+    """The server reads the whole request and closes without answering — the
+    write may well have been stored. That is exit 4, and never 'retry'."""
+    import socket
+
+    class Dropper(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.request.shutdown(socket.SHUT_RDWR)
+            self.request.close()
+
+        def log_message(self, *a):
+            pass
+
+    srv = _serve(Dropper)
+    try:
+        result, _ = _say(flopdid, f"http://127.0.0.1:{srv.server_address[1]}")
+        assert flopdid._real_send(result["url"]) == flopdid.EXIT_INDETERMINATE
+        err = capsys.readouterr().err
+        assert (
+            "OUTCOME UNKNOWN" in err
+            and "Do NOT resend" in err
+            and "NOT SENT" not in err
+        )
+    finally:
+        srv.shutdown()
+
+
+def _room_json(result, *, include: bool):
+    msgs = []
+    if include:
+        msgs.append(
+            {
+                "seq": 9,
+                "ts": "2026-09-05T00:00:00Z",
+                "from": result["did"],
+                "text": result["text"],
+                "nonce": result["nonce"],
+                "sig": result["sig"],
+            }
+        )
+    return json.dumps(
+        {"generation": 3, "last_seq": 9, "count": len(msgs), "messages": msgs}
+    ).encode()
+
+
+@pytest.mark.parametrize(
+    "found,readable,exit_code,outcome",
+    [
+        (True, True, 0, "accepted-by-readback"),
+        (False, True, 2, "not-landed-by-readback"),
+        (False, False, 4, "indeterminate"),
+    ],
+)
+def test_an_indeterminate_send_is_settled_by_reading_back(
+    flopdid, tmp_path, monkeypatch, found, readable, exit_code, outcome
+):
+    result, raw = _say(flopdid, PROD)
+    path = _approval(flopdid, tmp_path, result)
+    _tty(monkeypatch, flopdid, "d-gate-test")
+    monkeypatch.setattr(flopdid, "_send", lambda url: flopdid.EXIT_INDETERMINATE)
+
+    def fake_get(url, timeout=30):
+        if not readable:
+            return 0, {}, b"TimeoutError: timed out"
+        if url.endswith("/export"):
+            return 200, {"x-room-generation": "3"}, b'{"seq":9}\n'
+        return 200, {}, _room_json(result, include=found)
+
+    monkeypatch.setattr(flopdid, "_get", fake_get)
+    code = _emit_code(flopdid, result, _args(PROD, production=True, approval=path), raw)
+    assert code == exit_code
+    entry = _proof(flopdid)[-1]
+    assert (
+        entry["outcome"] == outcome and entry["http_exit"] == flopdid.EXIT_INDETERMINATE
+    )
+    assert not Path(path).exists(), "consumed on dispatch whatever happened afterwards"
+    if found:
+        assert entry["readback"]["seq"] == 9 and entry["readback"]["generation"] == 3
+        assert (
+            "after" in entry
+        )  # the snapshot ran once the write was known to have landed
+    else:
+        assert "after" not in entry
+
+
+def test_a_failing_snapshot_still_leaves_the_accepted_proof(
+    flopdid, tmp_path, monkeypatch
+):
+    result, raw = _say(flopdid, PROD)
+    path = _approval(flopdid, tmp_path, result)
+    _tty(monkeypatch, flopdid, "d-gate-test")
+
+    def boom(result, base, stamp):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(flopdid, "_snapshot_after_send", boom)
+    assert (
+        _emit_code(flopdid, result, _args(PROD, production=True, approval=path), raw)
+        == 0
+    )
+    entry = _proof(flopdid)[-1]
+    assert entry["outcome"] == "accepted" and entry["nonce"] == result["nonce"]
+    assert "No space left" in entry["after"]["error"]
+
+
+def test_an_unwritable_proof_log_refuses_before_anything_is_consumed(
+    flopdid, tmp_path, monkeypatch
+):
+    result, raw = _say(flopdid, PROD)
+    path = _approval(flopdid, tmp_path, result)
+    _tty(monkeypatch, flopdid, "d-gate-test")
+    flopdid.LOGS_DIR.parent.mkdir(parents=True, exist_ok=True)
+    flopdid.LOGS_DIR.write_text("not a directory")  # mkdir and open must both fail
+    code = _emit_code(flopdid, result, _args(PROD, production=True, approval=path), raw)
+    assert code == flopdid.EXIT_GATE_REFUSED
+    assert flopdid._test_sent == [] and Path(path).exists()
