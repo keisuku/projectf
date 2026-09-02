@@ -793,39 +793,84 @@ def _snapshot_after_send(result: dict, base: str, stamp: str) -> dict:
     return out
 
 
-def _readback(result: dict, base: str) -> tuple[int, str, dict]:
+def _ts_epoch(ts: str) -> float | None:
+    """A server `ts` ("2026-09-02T22:10:23.323177Z") as an epoch, or None."""
+    from datetime import datetime
+
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+    except (AttributeError, ValueError, TypeError):
+        return None
+
+
+def _readback(result: dict, base: str, dispatched_at: float) -> tuple[int, str, dict]:
     """Settle an indeterminate send by reading the target back.
 
-    Returns (exit code, outcome, evidence). For a room write the room's newest
-    records are searched for our nonce and DID; for a note the value is
-    compared. Only a successful read that does not show the write says it did
-    not land — and even then a retry needs a fresh approval, which is the
-    point: nothing here can resend on its own.
+    Returns (exit code, outcome, evidence). Nothing here can resend; the only
+    question is whether a retry (with a fresh approval) would duplicate a
+    record, so absence has to be PROVED, never inferred from a window that
+    may simply have rolled past the write.
+
+    For a room write the whole retained ring is read (`/export`) and searched
+    for our nonce and DID. Presence is acceptance. Absence counts only if the
+    ring still holds a record from before the request was dispatched: the
+    ring is a contiguous tail, so if it reaches back past our dispatch and our
+    record is not in it, our record did not land. A ring that has already
+    rolled past the dispatch time — a busy room after a 30-second timeout —
+    proves nothing, and stays indeterminate.
+
+    For a note the stored value is compared exactly, whole line to whole
+    line, never by substring: a proposed value that is a substring of the old one would
+    otherwise read as landed.
     """
     if _write_kind(result) == "say":
-        status, _, body = _get(f"{base}/r/{result['room']}?format=json&limit=50")
-        if status == 200:
+        room = result["room"]
+        status, headers, body = _get(f"{base}/r/{room}/export")
+        if status != 200:
+            return EXIT_INDETERMINATE, "indeterminate", {
+                "status": status, "error": body[:300].decode("utf-8", "replace")}
+        generation = headers.get("x-room-generation")
+        oldest: float | None = None
+        for line in body.splitlines():
             try:
-                view = json.loads(body.decode("utf-8"))
+                rec = json.loads(line)
             except ValueError:
-                return EXIT_INDETERMINATE, "indeterminate", {"error": "read returned non-JSON"}
-            for msg in view.get("messages", []):
-                if msg.get("nonce") == result["nonce"] and msg.get("from") == result["did"]:
-                    return 0, "accepted-by-readback", {
-                        k: msg.get(k) for k in ("seq", "ts", "nonce", "sig")
-                    } | {"generation": view.get("generation")}
-            return 2, "not-landed-by-readback", {"generation": view.get("generation"),
-                                                 "last_seq": view.get("last_seq")}
+                continue
+            if rec.get("nonce") == result["nonce"] and rec.get("from") == result["did"]:
+                return 0, "accepted-by-readback", {
+                    k: rec.get(k) for k in ("seq", "ts", "nonce", "sig")
+                } | {"generation": generation}
+            when = _ts_epoch(rec.get("ts"))
+            if when is not None and (oldest is None or when < oldest):
+                oldest = when
+        if oldest is not None and oldest <= dispatched_at:
+            return 2, "not-landed-by-readback", {
+                "generation": generation, "ring_reaches_back_to": oldest,
+                "dispatched_at": dispatched_at}
+        return EXIT_INDETERMINATE, "indeterminate", {
+            "generation": generation, "reason": "the retained ring does not reach back to "
+            "the dispatch time, so absence cannot be proved",
+            "ring_reaches_back_to": oldest, "dispatched_at": dispatched_at}
+    status, _, body = _get(f"{base}/kv/{_write_target(result)}")
+    if status != 200:
         return EXIT_INDETERMINATE, "indeterminate", {
             "status": status, "error": body[:300].decode("utf-8", "replace")}
-    status, _, body = _get(f"{base}/kv/{_write_target(result)}")
-    if status == 200:
-        text = body.decode("utf-8", "replace")
-        if _write_body(result) in text:
-            return 0, "accepted-by-readback", {"body": text[:400]}
-        return 2, "not-landed-by-readback", {"body": text[:400]}
-    return EXIT_INDETERMINATE, "indeterminate", {
-        "status": status, "error": body[:300].decode("utf-8", "replace")}
+    stored = _note_value(body.decode("utf-8", "replace"))
+    if stored == _write_body(result):
+        return 0, "accepted-by-readback", {"value": stored[:400]}
+    return 2, "not-landed-by-readback", {"value": stored[:400]}
+
+
+def _note_value(text: str) -> str:
+    """The exact stored value out of a note read. Upstream `note_read` answers
+    `<banner>\n\n<value>` plus an optional `\n\n# budget: …` footer (there is
+    no JSON form for a single note), and a value is one swept line, so the
+    value is the first line after the banner's blank line — whole, never a
+    substring test against the page."""
+    lines = text.split("\n")
+    if lines and lines[0].startswith("!!"):
+        return lines[2] if len(lines) > 2 else ""
+    return lines[0] if lines else ""
 
 
 def _proof_preflight() -> str | None:
@@ -888,6 +933,8 @@ def production_fetch(result: dict, args, raw_body: str) -> int:
     if typed.strip() != expected:
         return refused("confirmation did not match; aborted by operator")
     entry["approval"]["consumed_as"] = _consume_approval(approval_path)
+    dispatched_at = time.time()
+    entry["dispatched_at"] = dispatched_at
     code = _send(result["url"])
     entry["http_exit"] = code
     entry["outcome"] = {0: "accepted", 1: "server-refused", 2: "not-sent",
@@ -895,33 +942,41 @@ def production_fetch(result: dict, args, raw_body: str) -> int:
     if code == EXIT_INDETERMINATE:
         # The reply was lost after dispatch. Read the target back and let what
         # the server holds decide, never the exception.
-        code, entry["outcome"], entry["readback"] = _readback(result, base)
+        code, entry["outcome"], entry["readback"] = _readback(result, base, dispatched_at)
         print(f"--> read back: {entry['outcome']}")
         if code == EXIT_INDETERMINATE:
             print("--> STILL UNKNOWN: read the room back by hand before any retry; a retry "
                   "needs a fresh approval and may duplicate an accepted record.")
         elif code == 2:
             print("--> the write did not land; a retry needs a fresh approval.")
+    # The write's own record goes to disk NOW, before the snapshot is even
+    # attempted: the snapshot can be large and can be the thing that fills the
+    # disk, and an audit entry that waits for it is an audit entry that can be
+    # lost. The snapshot gets its own line afterwards, keyed by nonce.
+    _proof_append(entry)
+    print(f"--> proof: {PROOF_LOG} ({entry['outcome']})")
     if code == 0:
-        # The write happened. Whatever the snapshot does, the proof entry is
-        # appended: an audit record that depends on a second step succeeding
-        # is not an audit record.
+        snapshot = {"ts": time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()), "record": "snapshot",
+                    "target": entry["target"], "nonce": entry["nonce"], "did": entry["did"]}
         try:
-            entry["after"] = _snapshot_after_send(result, base, stamp)
+            snapshot["after"] = _snapshot_after_send(result, base, stamp)
         except Exception as exc:  # noqa: BLE001 — recorded, never fatal
-            entry["after"] = {"error": f"{type(exc).__name__}: {exc}"}
-            print(f"--> snapshot FAILED ({entry['after']['error']}); the write stands and "
-                  "is recorded below. Fetch /export by hand.", file=sys.stderr)
-        rec = entry["after"].get("record") or entry.get("readback")
+            snapshot["after"] = {"error": f"{type(exc).__name__}: {exc}"}
+            print(f"--> snapshot FAILED ({snapshot['after']['error']}); the write stands and "
+                  "is already recorded. Fetch /export by hand.", file=sys.stderr)
+        rec = snapshot["after"].get("record") or entry.get("readback")
         if rec and "seq" in rec:
             print(f"--> recorded: room={result.get('room')} generation={rec.get('generation')} "
                   f"seq={rec.get('seq')} nonce={rec.get('nonce')} ts={rec.get('ts')}")
-        exp = entry["after"].get("export", {})
+        exp = snapshot["after"].get("export", {})
         if exp.get("file"):
             print(f"--> export snapshot: {exp['file']} (generation {exp.get('generation')}, "
                   f"{exp.get('lines')} lines)")
-    _proof_append(entry)
-    print(f"--> proof: {PROOF_LOG} ({entry['outcome']})")
+        try:
+            _proof_append(snapshot)
+        except OSError as exc:
+            print(f"warning: the snapshot line could not be appended ({exc}); the accepted "
+                  "entry above is already on disk.", file=sys.stderr)
     return code
 
 

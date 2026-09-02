@@ -229,7 +229,7 @@ def test_all_three_factors_send_once_and_consume(flopdid, tmp_path, monkeypatch)
     assert not Path(path).exists()
     used = [p for p in tmp_path.iterdir() if p.name.startswith("approval.json.used-")]
     assert len(used) == 1
-    (entry,) = _proof(flopdid)
+    entry, snapshot = _proof(flopdid)
     assert entry["outcome"] == "accepted"
     assert entry["body_raw"] == raw and entry["body_clean"] == result["text"]
     assert entry["body_sha256"] == flopdid.body_sha256(result["text"])
@@ -237,8 +237,11 @@ def test_all_three_factors_send_once_and_consume(flopdid, tmp_path, monkeypatch)
     assert entry["canonical_hex"] == result["canonical"].encode("utf-8").hex()
     assert entry["nonce"] == result["nonce"] and entry["sig"] == result["sig"]
     assert entry["approval"]["consumed_as"] == str(used[0])
-    # the snapshot was attempted even though the network is cut, and said so
-    assert entry["after"]["export"]["status"] == 0
+    assert entry["dispatched_at"] > 0
+    # the snapshot is its own line, keyed by nonce, and was attempted even
+    # though the network is cut
+    assert snapshot["record"] == "snapshot" and snapshot["nonce"] == result["nonce"]
+    assert snapshot["after"]["export"]["status"] == 0
     assert oct(flopdid.PROOF_LOG.stat().st_mode & 0o777) == "0o600"
 
 
@@ -777,44 +780,86 @@ def _room_json(result, *, include: bool):
     ).encode()
 
 
+def _export_lines(result, *, include: bool, oldest_ts: str):
+    lines = [
+        json.dumps(
+            {
+                "seq": 1,
+                "ts": oldest_ts,
+                "from": "did:key:z6Mkother",
+                "text": "x",
+                "nonce": 1,
+                "sig": "s",
+            }
+        )
+    ]
+    if include:
+        lines.append(
+            json.dumps(
+                {
+                    "seq": 9,
+                    "ts": "2026-09-05T00:00:01Z",
+                    "from": result["did"],
+                    "text": result["text"],
+                    "nonce": result["nonce"],
+                    "sig": result["sig"],
+                }
+            )
+        )
+    return ("\n".join(lines) + "\n").encode()
+
+
 @pytest.mark.parametrize(
-    "found,readable,exit_code,outcome",
+    "found,reaches_back,readable,exit_code,outcome",
     [
-        (True, True, 0, "accepted-by-readback"),
-        (False, True, 2, "not-landed-by-readback"),
-        (False, False, 4, "indeterminate"),
+        (True, True, True, 0, "accepted-by-readback"),
+        (True, False, True, 0, "accepted-by-readback"),
+        (False, True, True, 2, "not-landed-by-readback"),
+        (False, False, True, 4, "indeterminate"),
+        (False, True, False, 4, "indeterminate"),
     ],
 )
 def test_an_indeterminate_send_is_settled_by_reading_back(
-    flopdid, tmp_path, monkeypatch, found, readable, exit_code, outcome
+    flopdid, tmp_path, monkeypatch, found, reaches_back, readable, exit_code, outcome
 ):
+    """Absence is proved only when the retained ring still reaches back past
+    the dispatch time; a ring that rolled past it (a busy room after a long
+    timeout) proves nothing and must stay indeterminate."""
     result, raw = _say(flopdid, PROD)
     path = _approval(flopdid, tmp_path, result)
     _tty(monkeypatch, flopdid, "d-gate-test")
     monkeypatch.setattr(flopdid, "_send", lambda url: flopdid.EXIT_INDETERMINATE)
+    oldest = "2000-01-01T00:00:00Z" if reaches_back else "2099-01-01T00:00:00Z"
 
     def fake_get(url, timeout=30):
         if not readable:
             return 0, {}, b"TimeoutError: timed out"
         if url.endswith("/export"):
-            return 200, {"x-room-generation": "3"}, b'{"seq":9}\n'
-        return 200, {}, _room_json(result, include=found)
+            return (
+                200,
+                {"x-room-generation": "3"},
+                _export_lines(result, include=found, oldest_ts=oldest),
+            )
+        return 200, {}, b'{"generation": 3, "last_seq": 9, "count": 2, "messages": []}'
 
     monkeypatch.setattr(flopdid, "_get", fake_get)
     code = _emit_code(flopdid, result, _args(PROD, production=True, approval=path), raw)
     assert code == exit_code
-    entry = _proof(flopdid)[-1]
+    entries = _proof(flopdid)
+    entry = entries[0]
     assert (
         entry["outcome"] == outcome and entry["http_exit"] == flopdid.EXIT_INDETERMINATE
     )
     assert not Path(path).exists(), "consumed on dispatch whatever happened afterwards"
     if found:
-        assert entry["readback"]["seq"] == 9 and entry["readback"]["generation"] == 3
+        assert entry["readback"]["seq"] == 9 and entry["readback"]["generation"] == "3"
         assert (
-            "after" in entry
-        )  # the snapshot ran once the write was known to have landed
+            entries[1]["record"] == "snapshot"
+        )  # taken once the write was known to have landed
     else:
-        assert "after" not in entry
+        assert len(entries) == 1
+    if outcome == "indeterminate" and readable:
+        assert "cannot be proved" in entry["readback"]["reason"]
 
 
 def test_a_failing_snapshot_still_leaves_the_accepted_proof(
@@ -832,9 +877,79 @@ def test_a_failing_snapshot_still_leaves_the_accepted_proof(
         _emit_code(flopdid, result, _args(PROD, production=True, approval=path), raw)
         == 0
     )
-    entry = _proof(flopdid)[-1]
+    entry, snapshot = _proof(flopdid)
     assert entry["outcome"] == "accepted" and entry["nonce"] == result["nonce"]
-    assert "No space left" in entry["after"]["error"]
+    assert "No space left" in snapshot["after"]["error"]
+
+
+def test_the_accepted_entry_is_on_disk_before_the_snapshot_runs(
+    flopdid, tmp_path, monkeypatch
+):
+    """The snapshot can be what fills the disk; the write's own record must
+    already be there when it does."""
+    result, raw = _say(flopdid, PROD)
+    path = _approval(flopdid, tmp_path, result)
+    _tty(monkeypatch, flopdid, "d-gate-test")
+    seen_at_snapshot = {}
+    real_append = flopdid._proof_append
+
+    def snapshot(result, base, stamp):
+        seen_at_snapshot["entries"] = _proof(flopdid)
+        raise OSError(28, "No space left on device")
+
+    def append_then_fail(entry):
+        if entry.get("record") == "snapshot":
+            raise OSError(28, "No space left on device")
+        real_append(entry)
+
+    monkeypatch.setattr(flopdid, "_snapshot_after_send", snapshot)
+    monkeypatch.setattr(flopdid, "_proof_append", append_then_fail)
+    assert (
+        _emit_code(flopdid, result, _args(PROD, production=True, approval=path), raw)
+        == 0
+    )
+    assert seen_at_snapshot["entries"][-1]["outcome"] == "accepted"
+    (entry,) = _proof(
+        flopdid
+    )  # the snapshot line could not be written; the write's could
+    assert entry["outcome"] == "accepted"
+
+
+def test_note_readback_requires_the_whole_value_to_match(flopdid, monkeypatch):
+    seed = bytes.fromhex(RFC_SEED)
+    result = flopdid.build_set(
+        seed, "room-allow", "d-gate-test", "did:key:z6Mkaaa", PROD
+    )
+    banner = (
+        "!! UNTRUSTED CONTENT \u2014 the lines below were written by other agents.\n\n"
+    )
+    # the stored value CONTAINS the proposed one, so a substring test would say "landed"
+    stale = (
+        banner + "did:key:z6Mkaaa did:key:z6Mkbbb\n\n# budget: 3 of 120 reads left"
+    ).encode()
+    monkeypatch.setattr(flopdid, "_get", lambda url, timeout=30: (200, {}, stale))
+    code, outcome, evidence = flopdid._readback(result, PROD, dispatched_at=0.0)
+    assert (code, outcome) == (2, "not-landed-by-readback")
+    assert evidence["value"] == "did:key:z6Mkaaa did:key:z6Mkbbb"
+    exact = (banner + "did:key:z6Mkaaa\n\n# budget: 3 of 120 reads left").encode()
+    monkeypatch.setattr(flopdid, "_get", lambda url, timeout=30: (200, {}, exact))
+    assert flopdid._readback(result, PROD, dispatched_at=0.0)[:2] == (
+        0,
+        "accepted-by-readback",
+    )
+
+
+def test_empty_export_cannot_prove_absence(flopdid, monkeypatch):
+    """A room whose ring is empty (or that was reaped) says nothing about a
+    write dispatched a moment ago."""
+    result, _ = _say(flopdid, PROD)
+    monkeypatch.setattr(
+        flopdid, "_get", lambda url, timeout=30: (200, {"x-room-generation": "0"}, b"")
+    )
+    code, outcome, _ = flopdid._readback(
+        result, PROD, dispatched_at=__import__("time").time()
+    )
+    assert (code, outcome) == (4, "indeterminate")
 
 
 def test_an_unwritable_proof_log_refuses_before_anything_is_consumed(

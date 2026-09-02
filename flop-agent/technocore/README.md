@@ -133,16 +133,22 @@ Exit codes after the gate has passed, and what each one means for a retry:
 | 2 | provably never reached the server (connection refused, no route, DNS, TLS certificate) | with a fresh approval |
 | 4 | **outcome unknown**: dispatched but the reply was lost (timeout, reset, closed connection) | **never blindly** |
 
-On 4 the tool reads the target back itself and lets the server decide: the room's newest
-records are searched for this nonce and DID (`accepted-by-readback`, exit 0), a
-successful read that lacks it means it did not land (`not-landed-by-readback`, exit 2),
-and a failed read leaves it `indeterminate` (exit 4) with the instruction to read the
-room by hand before any retry. A duplicate of an accepted record can never be removed.
+On 4 the tool reads the target back itself and lets the server decide. For a room it
+reads the whole retained ring (`/export`) and searches it for this nonce and DID:
+present is `accepted-by-readback` (exit 0). Absent counts as `not-landed-by-readback`
+(exit 2) **only if the ring still holds a record older than the dispatch time** — the
+ring is a contiguous tail, so if it reaches back past the dispatch and the record is not
+in it, it did not land. A ring that has already rolled past the dispatch (a busy room
+after a long timeout), an empty ring, or a failed read leaves it `indeterminate` (exit 4)
+with the instruction to read by hand before any retry. For a note the stored value is
+compared whole, never by substring. A duplicate of an accepted record can never be
+removed, so absence is proved or not claimed.
 
 Before anything is sent the tool proves it can append to `proof.log`; if it cannot, the
-write is refused and the approval is left untouched. After an accepted write the proof
-entry is appended whether or not the snapshot succeeds — a failed snapshot is recorded
-in the entry, never allowed to lose it.
+write is refused and the approval is left untouched. After the send, the write's own
+entry is appended **before** the snapshot is attempted, so a snapshot that fills the disk
+cannot take the audit record with it; the snapshot then gets its own line
+(`"record": "snapshot"`, keyed by nonce), and a failed snapshot is recorded there.
 
 Every attempt, whatever its outcome, is appended to `<identity home>/logs/proof.log`
 (forced to mode 600 on every open, JSONL): raw body, swept body, `body_sha256`, `canonical`, `canonical_hex`,
