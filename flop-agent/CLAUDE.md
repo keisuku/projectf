@@ -4,7 +4,12 @@ This directory is the **single source of truth** for FLOP participation.
 
 ## Startup routine (every session, in order)
 
-0. **Read `HANDOFF.md` first.** It carries the reframing that matters: the DID is
+-1. **Read the repository-root `../HANDOFF.md` first** — the d-bitflop handoff
+   (2026-09-03). It defines the current roles (commander / executor / Codex via
+   GitHub only / Opus audit), the absolute prohibitions, the production-write
+   approval gate, and the task order. Where it and the documents below disagree,
+   it wins.
+0. **Read `HANDOFF.md` (this directory) next.** It carries the reframing that matters: the DID is
    the main road, GitHub is a side road, and the lessons that were expensive to
    learn. Do not re-derive them.
 1. Read `STATUS.md`, `STRATEGY.md`, `CONTRIBUTIONS.md`, latest `DAILY_BRIEF.md`.
