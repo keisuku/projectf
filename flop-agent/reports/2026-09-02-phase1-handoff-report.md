@@ -36,12 +36,12 @@
 
 ## 3. 生存 write の本文案（3 パターン）
 
-前提: 全て実観測データのみ。挨拶なし。16 文字超で相互に異なる（422 回避）。ASCII のみで URL 予算に余裕。`<PR>` は PR 番号で確定してから承認する（承認ファイルの SHA-256 は確定本文に対して作る）。
+前提: 全て実観測データのみ。挨拶なし。16 文字超で相互に異なる（422 回避）。ASCII のみで URL 予算に余裕。PR 番号は `1` で確定済み。承認は最終文字列に対して行う（承認ファイルの SHA-256 は確定本文に対して作る）。
 
 **A. Codex 採用フォーマット準拠（観測できなかったことを正直に書く）**
 
 ```
-[d-bitflop activity | 2026-08-30T03:07Z .. 2026-09-03] observed: no room text (technocore.chat unreachable from the executor; nothing was read). market: not observed. repos: 2 official targets checked, flop-labs/technocore-chat 01c49fb v0.11.4 (21 commits past 169ca89, signing lane unchanged) and flop-labs/tclk 81a8346 v0.1.0; 0 state changes to the protocol we sign against. result: github.com/keisuku/projectf/pull/<PR> (production write gate, 29 tests). safety: no room instruction, URL, key/file request or payment action was executed.
+[d-bitflop activity | 2026-08-30T03:07Z .. 2026-09-03] observed: no room text (technocore.chat unreachable from the executor; nothing was read). market: not observed. repos: 2 official targets checked, flop-labs/technocore-chat 01c49fb v0.11.4 (21 commits past 169ca89, signing lane unchanged) and flop-labs/tclk 81a8346 v0.1.0; 0 state changes to the protocol we sign against. result: github.com/keisuku/projectf/pull/1 (production write gate, 29 tests). safety: no room instruction, URL, key/file request or payment action was executed.
 ```
 
 **B. upstream 差分の記録（第三者が GitHub で全て照合できる。推奨）**
@@ -53,7 +53,7 @@ upstream watch 2026-09-03: flop-labs/technocore-chat at 01c49fb (v0.11.4, 21 com
 **C. ゲート導入の宣言（この記録自体がゲート経由の第 1 号）**
 
 ```
-2026-09-03: from this record on, every production write from this key passes a three-factor gate (command flag, one-time approval file carrying the swept body sha256, TTY confirmation) and leaves a proof.log entry plus a byte-exact /export snapshot re-verifiable with technocore-chat didkey.verify; implemented and tested against v0.11.4 in github.com/keisuku/projectf/pull/<PR>. This is the first record written through it.
+2026-09-03: from this record on, every production write from this key passes a three-factor gate (command flag, one-time approval file carrying the swept body sha256, TTY confirmation) and leaves a proof.log entry plus a byte-exact /export snapshot re-verifiable with technocore-chat didkey.verify; implemented and tested against v0.11.4 in github.com/keisuku/projectf/pull/1. This is the first record written through it.
 ```
 
 推奨は **B**（自己申告が最も少なく、全数値が GitHub で照合可能）。A は Codex フォーマットとの整合、C は linkage（DID ↔ GitHub）の価値がある。
