@@ -433,6 +433,29 @@ def build_set(seed: bytes, ns: str, key: str, value: str, base: str,
             "sig": sig, "url": url, "canonical": canonical, "urlBytes": len(url.encode())}
 
 
+def _request(url: str, accept: str):
+    import urllib.request
+
+    return urllib.request.Request(url, headers={
+        "User-Agent": "flopdid (participation agent; contact via github.com/keisuku)",
+        "Accept": accept,
+    })
+
+
+def _opener():
+    """An opener that refuses every redirect, for both writes and the
+    post-write reads. `redirect_request` returning None makes urllib raise the
+    3xx as an HTTPError instead of following it, so the only host any request
+    from this tool reaches is the one in the URL that was built and gated."""
+    import urllib.request
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    return urllib.request.build_opener(NoRedirect)
+
+
 def _send(url: str) -> int:
     """GET the signed URL from here, and print what the server said.
 
@@ -445,16 +468,18 @@ def _send(url: str) -> int:
 
     The URL is never printed here — only the response. Every write on this
     service is a plain GET, so this is the whole operation.
+
+    Redirects are never followed. A signed URL is a capability, and following
+    a 3xx would hand it to whatever host the answering server names — a local
+    test server answering `302 https://technocore.chat/…` would turn a gated
+    test-lane write into an ungated production one. The gate decides on the
+    host the operator typed, so that is the only host this request may reach.
     """
     import urllib.error
-    import urllib.request
 
-    req = urllib.request.Request(url, headers={
-        "User-Agent": "flopdid (participation agent; contact via github.com/keisuku)",
-        "Accept": "text/plain, application/json, */*",
-    })
+    req = _request(url, "text/plain, application/json, */*")
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with _opener().open(req, timeout=30) as resp:
             body = resp.read().decode("utf-8", "replace")
             print(f"HTTP {resp.status}")
             print(body.rstrip())
@@ -464,6 +489,10 @@ def _send(url: str) -> int:
         # useful thing on the screen — print them rather than a status alone.
         body = exc.read().decode("utf-8", "replace")
         print(f"HTTP {exc.code}", file=sys.stderr)
+        if 300 <= exc.code < 400:
+            print(f"REFUSED: the server answered with a redirect to "
+                  f"{exc.headers.get('Location', '?')!r}; a signed write is never "
+                  "forwarded to a host the operator did not name.", file=sys.stderr)
         print(body.rstrip(), file=sys.stderr)
         return 1
     except Exception as exc:  # DNS, TLS, egress policy, timeout
@@ -625,33 +654,47 @@ def _show_before_send(result: dict, host: str, raw_body: str, approval_path: str
     print("=" * 72)
 
 
+def _open_private(path: Path, flags: int) -> int:
+    """Open (creating if needed) and force mode 600 on the descriptor. The mode
+    argument to os.open applies only to a file it creates; a proof log or
+    snapshot that already exists with a wider mode — restored from a backup,
+    created by hand — keeps it. These files carry nonces and signatures, which
+    are a live write capability until the record is buried, so the mode is
+    enforced on every open, the way the seed file's is."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, flags, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+    except OSError:
+        os.close(fd)
+        raise
+    return fd
+
+
 def _proof_append(entry: dict) -> None:
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    fd = os.open(PROOF_LOG, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    fd = _open_private(PROOF_LOG, os.O_WRONLY | os.O_CREAT | os.O_APPEND)
     with os.fdopen(fd, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
 
 
-def _get(url: str, timeout: int = 30) -> tuple[int, dict, str]:
-    """Plain GET for the post-write snapshot. Returns (status, headers, body);
-    a transport failure is (0, {}, reason) — the snapshot is evidence, not a
-    step that may abort the record of a write that already happened."""
+def _get(url: str, timeout: int = 30) -> tuple[int, dict, bytes]:
+    """Plain GET for the post-write snapshot. Returns (status, headers, body)
+    with the body as the raw bytes received — an /export is promised byte-exact
+    and is hashed and stored as such; decoding is the caller's business. A
+    transport failure is (0, {}, reason-as-bytes): the snapshot is evidence,
+    not a step that may abort the record of a write that already happened.
+    Redirects are refused, as in `_send`."""
     import urllib.error
-    import urllib.request
 
-    req = urllib.request.Request(url, headers={
-        "User-Agent": "flopdid (participation agent; contact via github.com/keisuku)",
-        "Accept": "application/json, application/x-ndjson, text/plain, */*",
-    })
+    req = _request(url, "application/json, application/x-ndjson, text/plain, */*")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.status, {k.lower(): v for k, v in resp.headers.items()}, \
-                resp.read().decode("utf-8", "replace")
+        with _opener().open(req, timeout=timeout) as resp:
+            return resp.status, {k.lower(): v for k, v in resp.headers.items()}, resp.read()
     except urllib.error.HTTPError as exc:
-        return exc.code, {k.lower(): v for k, v in exc.headers.items()}, \
-            exc.read().decode("utf-8", "replace")
+        return exc.code, {k.lower(): v for k, v in exc.headers.items()}, exc.read()
     except Exception as exc:  # noqa: BLE001 — any transport failure is data here
-        return 0, {}, f"{type(exc).__name__}: {exc}"
+        return 0, {}, f"{type(exc).__name__}: {exc}".encode("utf-8")
 
 
 def _snapshot_after_send(result: dict, base: str, stamp: str) -> dict:
@@ -661,24 +704,26 @@ def _snapshot_after_send(result: dict, base: str, stamp: str) -> dict:
     out: dict = {}
     if _write_kind(result) != "say":
         status, _, body = _get(f"{base}/kv/{_write_target(result)}")
-        out["readback"] = {"status": status, "body": body[:400]}
+        out["readback"] = {"status": status, "body": body[:400].decode("utf-8", "replace")}
         return out
     room = result["room"]
     status, headers, body = _get(f"{base}/r/{room}/export")
     if status == 200:
+        # Raw bytes, binary mode, and the hash over those same bytes: the file
+        # on disk IS the export, with no newline translation and no decoding.
         path = LOGS_DIR / f"export-{room}-{stamp}.jsonl"
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fd = _open_private(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
+        with os.fdopen(fd, "wb") as fh:
             fh.write(body)
         out["export"] = {"file": str(path), "generation": headers.get("x-room-generation"),
-                         "lines": body.count("\n"), "sha256": hashlib.sha256(
-                             body.encode("utf-8")).hexdigest()}
+                         "lines": body.count(b"\n"), "bytes": len(body),
+                         "sha256": hashlib.sha256(body).hexdigest()}
     else:
-        out["export"] = {"status": status, "error": body[:300]}
+        out["export"] = {"status": status, "error": body[:300].decode("utf-8", "replace")}
     status, _, body = _get(f"{base}/r/{room}?format=json&limit=50")
     if status == 200:
         try:
-            view = json.loads(body)
+            view = json.loads(body.decode("utf-8"))
             out["room"] = {"generation": view.get("generation"), "last_seq": view.get("last_seq"),
                            "count": view.get("count")}
             for msg in view.get("messages", []):
@@ -688,7 +733,7 @@ def _snapshot_after_send(result: dict, base: str, stamp: str) -> dict:
         except ValueError:
             out["room"] = {"error": "read returned non-JSON"}
     else:
-        out["room"] = {"status": status, "error": body[:300]}
+        out["room"] = {"status": status, "error": body[:300].decode("utf-8", "replace")}
     return out
 
 

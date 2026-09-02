@@ -44,9 +44,13 @@ def flopdid(tmp_path, monkeypatch):
         mod.did_from_pubkey(mod.PUBKEY(bytes.fromhex(RFC_SEED))) + "\n"
     )
     sent: list[str] = []
+    mod._real_send, mod._real_get = (
+        mod._send,
+        mod._get,
+    )  # for the tests that need the wire
     monkeypatch.setattr(mod, "_send", lambda url: sent.append(url) or 0)
     monkeypatch.setattr(
-        mod, "_get", lambda url, timeout=30: (0, {}, "network cut in tests")
+        mod, "_get", lambda url, timeout=30: (0, {}, b"network cut in tests")
     )
     mod._test_sent = sent
     yield mod
@@ -455,3 +459,113 @@ def test_approval_command_matches_what_the_gate_checks(flopdid, capsys):
     assert doc["approved_by"].startswith("<"), (
         "the human fills this in; the tool never does"
     )
+
+
+# ------------------------------------------------- the wire: redirects and files
+#
+# Codex review on PR #1: a loopback test server answering `302 Location:
+# https://technocore.chat/<the signed path>` would have been followed by
+# urllib, turning an ungated test-lane write into a production one. Two real
+# local servers prove the redirect is refused and the target never sees it.
+
+import http.server  # noqa: E402
+import threading  # noqa: E402
+
+
+class _Recorder(http.server.BaseHTTPRequestHandler):
+    hits: list[str] = []
+
+    def do_GET(self):
+        _Recorder.hits.append(self.path)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"landed\n")
+
+    def log_message(self, *a):  # keep pytest output clean
+        pass
+
+
+def _serve(handler):
+    srv = http.server.HTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+@pytest.fixture()
+def redirecting_pair():
+    """(redirector, target): the redirector answers every GET with a 302 to
+    the same path on the target; the target records what reaches it."""
+    _Recorder.hits.clear()
+    target = _serve(_Recorder)
+    t_port = target.server_address[1]
+
+    class Redirector(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(getattr(Redirector, "code", 302))
+            self.send_header("Location", f"http://127.0.0.1:{t_port}{self.path}")
+            self.end_headers()
+            self.wfile.write(b"moved\n")
+
+        def log_message(self, *a):
+            pass
+
+    redirector = _serve(Redirector)
+    yield redirector, target
+    redirector.shutdown()
+    target.shutdown()
+
+
+@pytest.mark.parametrize("code", [301, 302, 303, 307, 308])
+def test_send_never_follows_a_redirect(flopdid, redirecting_pair, capsys, code):
+    redirector, target = redirecting_pair
+    redirector.RequestHandlerClass.code = code
+    port = redirector.server_address[1]
+    result, _ = _say(flopdid, f"http://127.0.0.1:{port}")
+    rc = flopdid._real_send(result["url"])
+    assert rc == 1, "a redirect is a refusal, not a success"
+    assert _Recorder.hits == [], "the signed path never reached the redirect target"
+    err = capsys.readouterr().err
+    assert f"HTTP {code}" in err and "redirect" in err.lower()
+
+
+def test_get_never_follows_a_redirect(flopdid, redirecting_pair):
+    redirector, target = redirecting_pair
+    port = redirector.server_address[1]
+    status, headers, body = flopdid._real_get(f"http://127.0.0.1:{port}/r/x/export")
+    assert status == 302 and "location" in headers
+    assert _Recorder.hits == []
+
+
+def test_proof_log_is_forced_to_0600_even_if_it_already_exists(flopdid):
+    flopdid.LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    flopdid.PROOF_LOG.write_text('{"restored": true}\n')
+    flopdid.PROOF_LOG.chmod(0o644)
+    flopdid._proof_append({"ts": "t", "outcome": "test"})
+    assert oct(flopdid.PROOF_LOG.stat().st_mode & 0o777) == "0o600"
+    lines = flopdid.PROOF_LOG.read_text().splitlines()
+    assert len(lines) == 2 and json.loads(lines[1])["outcome"] == "test"
+
+
+def test_export_snapshot_is_the_exact_bytes_received(flopdid, monkeypatch):
+    # Bytes that text mode or a decode-with-replace would alter: a bare LF the
+    # platform might translate, and an invalid UTF-8 byte in the middle.
+    raw = b'{"seq":1,"text":"a\\u00e9"}\n{"seq":2,"bad":"\xff"}\n'
+    calls = []
+
+    def fake_get(url, timeout=30):
+        calls.append(url)
+        if url.endswith("/export"):
+            return 200, {"x-room-generation": "7"}, raw
+        return 200, {}, b'{"generation": 7, "last_seq": 2, "count": 2, "messages": []}'
+
+    monkeypatch.setattr(flopdid, "_get", fake_get)
+    result, _ = _say(flopdid, PROD)
+    out = flopdid._snapshot_after_send(result, PROD, "20990101T000000Z")
+    path = Path(out["export"]["file"])
+    assert path.read_bytes() == raw
+    assert out["export"]["sha256"] == __import__("hashlib").sha256(raw).hexdigest()
+    assert out["export"]["generation"] == "7" and out["export"]["lines"] == 2
+    assert out["export"]["bytes"] == len(raw)
+    assert oct(path.stat().st_mode & 0o777) == "0o600"
+    assert out["room"] == {"generation": 7, "last_seq": 2, "count": 2}

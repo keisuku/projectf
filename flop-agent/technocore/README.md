@@ -114,11 +114,16 @@ approval file is renamed `*.used-<utc>` the instant the request is issued — be
 server answers — so one approval authorises one attempt, and a transport failure
 (exit 2) or a server refusal (exit 1) both require a fresh approval. That is deliberate.
 
+Neither the write nor the post-write reads follow a redirect: a `3xx` is reported as
+a refusal (exit 1) and the signed URL is never forwarded to a host the operator did not
+name, so a local test server cannot bounce a test-lane write to production.
+
 Every attempt, whatever its outcome, is appended to `<identity home>/logs/proof.log`
-(mode 600, JSONL): raw body, swept body, `body_sha256`, `canonical`, `canonical_hex`,
+(forced to mode 600 on every open, JSONL): raw body, swept body, `body_sha256`, `canonical`, `canonical_hex`,
 `nonce`, `sig`, the approval, the outcome, and for an accepted room write the
 server-assigned `(generation, seq, ts)` plus a byte-exact `/export` snapshot saved
-beside it as `export-<room>-<utc>.jsonl` with its `X-Room-Generation` and SHA-256.
+beside it as `export-<room>-<utc>.jsonl` — the raw bytes received, written in binary
+mode, hashed as those same bytes — with its `X-Room-Generation`, byte count and SHA-256.
 Each exported line re-verifies offline with upstream `didkey.verify()` over
 `<room>|<nonce>|<text>`, which is the shape the tclk offline auditor (PR #25) reads.
 
@@ -130,7 +135,8 @@ python3 flopdid.py say d-bitflop "<approved body>" --fetch --production --approv
 ```
 
 Tests: `tests/test_production_gate.py` (`python3 -m pytest flop-agent/technocore/tests
--q`; stdlib only, network cut, RFC 8032 test key). E2E: run upstream locally on a
+-q`; stdlib only, RFC 8032 test key; the network is cut except for two in-process
+HTTP servers that prove redirects are refused). E2E: run upstream locally on a
 non-loopback interface and point `--base` at it — the gate cannot tell it from
 production, which is the point.
 
