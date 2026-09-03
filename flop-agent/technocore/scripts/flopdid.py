@@ -538,8 +538,9 @@ def _send(url: str) -> int:
     except Exception as exc:  # noqa: BLE001 — every transport failure is classified below
         if _never_reached(exc):
             print(f"NOT SENT: {type(exc).__name__}: {exc}", file=sys.stderr)
-            print("Nothing reached the server, so nothing was spent. Retry from a "
-                  "network that reaches this host.", file=sys.stderr)
+            print("Nothing reached the server, so no nonce was spent there. Retry from a "
+                  "network that reaches this host — a production retry needs a FRESH "
+                  "approval: the one used here was consumed on dispatch.", file=sys.stderr)
             return 2
         # A timeout, a reset, a connection closed before the reply, a truncated
         # body: the request may have been stored. Saying "not sent" here would
@@ -638,10 +639,15 @@ def _destination(base: str) -> str:
     host = (parts.hostname or "").lower()
     if not host:
         return base.lower()
+    if ":" in host:  # an IPv6 literal: keep the brackets, or `[::1]:443` and
+        host = f"[{host}]"  # `[::1:443]` would render the same destination
     try:
         port = parts.port
-    except ValueError:  # a malformed port; keep it visible rather than dropping it
-        return parts.netloc.lower()
+    except ValueError:
+        # A malformed port. Keep it visible rather than dropping it — but strip
+        # any userinfo first: this string is printed on the review screen and
+        # written to proof.log, and a password in a URL must not be persisted.
+        return parts.netloc.rpartition("@")[2].lower()
     return f"{host}:{port}" if port is not None else host
 
 
@@ -660,7 +666,12 @@ def _cleartext_refusal(base: str) -> str | None:
     try:
         import ipaddress
 
-        if ipaddress.ip_address(host).is_private:
+        addr = ipaddress.ip_address(host)
+        # 6to4 (2002::/16) embeds a public IPv4 address, and `is_private` says
+        # True for it. `2002:0808:0808::1` is 8.8.8.8 wearing a private label, so
+        # it is treated as the public address it carries.
+        six_to_four = addr.version == 6 and addr in ipaddress.ip_network("2002::/16")
+        if addr.is_private and not six_to_four:
             return None
     except ValueError:
         pass
@@ -1413,8 +1424,12 @@ def main() -> None:
         # destination of a signed capability URL is named on the command line or
         # it is the default host, so no exported variable — set by a profile, a
         # forgotten `export`, or another process — can redirect an approved write.
-        # The approval's `host` field then has to agree with it as well.
-        if getattr(args, "production", False):
+        # The approval's `host` field then has to agree with it as well, so
+        # `approval` refuses the variable too: otherwise a stray export in the
+        # phone's profile prints an approval for a host the write will not use,
+        # and the operator, told to leave `host` as printed, is handed a refusal
+        # at the one moment the clock is running.
+        if getattr(args, "production", False) or args.cmd == "approval":
             args.base = DEFAULT_BASE
         else:
             args.base = os.environ.get("TECHNOCORE_BASE", DEFAULT_BASE)

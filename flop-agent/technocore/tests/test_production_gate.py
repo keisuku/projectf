@@ -445,6 +445,62 @@ def test_a_signed_url_does_not_go_over_cleartext_to_a_public_host(
         assert Path(path).exists(), "a refused write does not consume the approval"
 
 
+@pytest.mark.parametrize(
+    "base,destination",
+    [
+        ("https://[2001:db8::1]:443", "[2001:db8::1]:443"),
+        ("https://[2001:db8::1:443]", "[2001:db8::1:443]"),
+        ("https://user:s3cr3t@technocore.chat:abc", "technocore.chat:abc"),
+        ("https://TECHNOCORE.CHAT:8443", "technocore.chat:8443"),
+    ],
+)
+def test_the_destination_string_is_unambiguous_and_carries_no_credential(
+    flopdid, base, destination
+):
+    """Two different addresses must not render the same destination, and the
+    string is printed on the review screen and written to proof.log — so a
+    password in a URL must not travel with it."""
+    assert flopdid._destination(base) == destination
+    assert "s3cr3t" not in flopdid._destination(base)
+
+
+def test_a_six_to_four_address_is_not_treated_as_private(flopdid):
+    """`ipaddress` calls 2002::/16 private, but a 6to4 address embeds a public
+    IPv4 one: 2002:0808:0808::1 is 8.8.8.8 wearing a private label."""
+    assert flopdid._cleartext_refusal("http://[2002:0808:0808::1]:8080") is not None
+    assert flopdid._cleartext_refusal("http://192.0.2.2:8801") is None
+    assert flopdid._cleartext_refusal("https://technocore.chat") is None
+
+
+def test_the_approval_command_does_not_take_the_destination_from_the_environment(
+    flopdid, monkeypatch, capsys
+):
+    """READY-TO-RUN tells the operator to leave the printed `host` as it is. A
+    stray `export` in a shell profile must not make that printed value something
+    the production write will then refuse."""
+    monkeypatch.setenv("TECHNOCORE_BASE", "https://evil.example.test")
+    monkeypatch.setattr(
+        sys, "argv", ["flopdid.py", "approval", "d-gate-test", "an approved body"]
+    )
+    flopdid.main()
+    assert json.loads(capsys.readouterr().out)["host"] == PROD_HOST
+    # …while an explicit --base still names a rehearsal server
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "flopdid.py",
+            "approval",
+            "d-gate-test",
+            "an approved body",
+            "--base",
+            "http://192.0.2.2:8801",
+        ],
+    )
+    flopdid.main()
+    assert json.loads(capsys.readouterr().out)["host"] == "192.0.2.2:8801"
+
+
 def test_the_approval_command_defaults_its_host_to_the_base(flopdid, capsys):
     """An approval prepared for a rehearsal server should match that server."""
     flopdid.cmd_approval(
@@ -500,6 +556,12 @@ def test_gate_reads_no_environment_variables(flopdid):
             flopdid._consume_approval,
             flopdid.is_loopback,
             flopdid._emit,
+            # Every function that decides or reports a gate outcome belongs here.
+            # A list that lags the code is a list that guards the old gate.
+            flopdid._destination,
+            flopdid._cleartext_refusal,
+            flopdid._refuse,
+            flopdid._show_before_send,
         )
     )
     names, strings = _code_tokens(gate)
@@ -924,7 +986,12 @@ def test_connection_refused_is_not_sent(flopdid, capsys):
         port = s.getsockname()[1]
     result, _ = _say(flopdid, f"http://127.0.0.1:{port}")
     assert flopdid._real_send(result["url"]) == 2
-    assert "NOT SENT" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "NOT SENT" in err
+    # The approval is consumed BEFORE dispatch, so exit 2 does not mean the
+    # attempt cost nothing: an operator told to "retry" must be told what a retry
+    # needs, or they meet "approval file does not exist" with the clock running.
+    assert "FRESH" in err and "approval" in err
 
 
 def test_a_reply_lost_after_dispatch_is_indeterminate_not_unsent(flopdid, capsys):

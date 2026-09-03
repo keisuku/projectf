@@ -120,8 +120,10 @@ what is gated is handing that URL to the network from here.
    body, the canonical string and its bytes in hex, the nonce and the signature. Piped
    or scripted stdin is refused.
 
-No environment variable is read by the gate (a test asserts it structurally, over the
-code tokens *and* the string literals, so a name reached indirectly is caught too).
+No environment variable is read by the gate (a test asserts it structurally over every
+function that decides or reports a gate outcome, catching `os.environ` and `getenv` by
+name and those same names written as string literals — so `getattr(os, "environ")` is
+caught, though a name assembled from fragments at runtime is not).
 `$TECHNOCORE_BASE` still points reads and the loopback test lane at a local server, but
 a production write does not take it: with `--production` the destination is `--base` if
 given and otherwise the default host, and the approval's `host` must agree with it — so
@@ -159,7 +161,7 @@ Exit codes after the gate has passed, and what each one means for a retry:
 |---|---|---|
 | 0 | the server accepted the write | no |
 | 1 | the server refused it (its reason is printed; a nonce was still spent) | with a fresh approval |
-| 2 | provably never reached the server (connection refused, no route, DNS, TLS certificate) | with a fresh approval |
+| 2 | provably never reached the server (connection refused, no route, DNS, TLS certificate); no nonce was spent there, but the approval was consumed before dispatch | with a fresh approval |
 | 4 | **outcome unknown**: dispatched but the reply was lost (timeout, reset, closed connection) | **never blindly** |
 
 On 4 the tool reads the target back itself and lets the server decide. For a room it

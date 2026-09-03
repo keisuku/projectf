@@ -22,7 +22,9 @@ anything, but both stall the job:
 So **signed writes use `--fetch`**, which sends the request from inside
 `flopdid.py` and prints only the server's reply. Its exit code says what
 happened: `0` the server accepted it, `1` the server refused it (the reason is
-printed), `2` it never left the device (nothing was spent — retry), `3` the gate
+printed), `2` it never left the device (no nonce was spent at the server — but a
+production retry needs a **fresh approval**, because the approval is consumed on
+dispatch, before the failure), `3` the gate
 refused before anything was sent (the missing factor is printed — nothing was
 spent), `4` **outcome unknown**: it was dispatched and the reply was lost, so the
 tool reads the target back and tells you what it found. Never retry on `4`
@@ -56,9 +58,13 @@ thirty seconds a week; that is the price of the guarantee, and it is cheap.
 
 ## 0. HOLD THE ROOM — one signed write every 7 days, through the gate
 
-**This is the live task.** The 24-hour stillborn deadline was met on
-2026-08-30 (three messages, seq 1..3); that record is kept at the end of this
-section. What remains is the 7-day idle clock, and it never stops.
+**This is the live task.** Three messages were sent on 2026-08-30 (seq 1..3),
+which — if that is still the room's state — cleared the 24-hour stillborn rule
+for good and leaves only the 7-day idle clock. That count is the last value a
+human reported, and repository-root `HANDOFF.md` §4 marks it 「過去値。再確認が必要」;
+nothing in this project can currently read the room to confirm it. **Step 1 below
+is how you confirm it, and it is not optional.** The record of how the room got
+there is kept at the end of this section.
 
 ### The write — one signed write every 7 days, forever — through the gate
 
@@ -66,12 +72,19 @@ Next due **2026-09-06T03:07Z (12:07 JST)**, from the last verified write
 (seq 3, `2026-08-30T03:07:24Z`). Since 2026-09-03 (JST) a production write is
 made only with a body the commander has approved (repo-root `HANDOFF.md` §2.5),
 and `flopdid.py` enforces that with three factors (`README.md` § Production write
-gate). The sequence on the phone:
+gate). The sequence on the phone, in this order:
 
 ```
+curl -sS "https://technocore.chat/r/d-bitflop?format=json"
 python3 flopdid.py backup-check
 python3 flopdid.py approval d-bitflop "<the approved body, exactly>"
 ```
+
+**Read that first line's output before going on.** Check three things: at least
+two messages, every one `from` our DID, and the `last_seq` and last `ts` this
+write is about to follow. Report those numbers. If the room is empty or gone,
+**stop** — that is a different situation from a keepalive, and sending the
+approved body does not fix it.
 
 Copy the printed JSON into `approval-1.json` in the current directory and set
 `approved_by` to your name. Leave `host` (`technocore.chat`) and `expires` (48
@@ -128,19 +141,8 @@ returns to whoever asks next. So one message was worse than none.
 
 Three were sent (seq 1..3, last `2026-08-30T03:07:24Z`), which — *if that is
 still the room's state* — puts it past `STILLBORN_MESSAGES = 1` permanently, so
-that only the 7-day idle clock above would remain. That count is the last value a
-human reported, and repository-root `HANDOFF.md` §4 marks it 「過去値。再確認が必要」;
-no machine in this project can currently read the room to confirm it. So read it
-back **before** the write, from a device that reaches the host:
-
-```
-curl -sS "https://technocore.chat/r/d-bitflop?format=json"
-```
-
-and check three things: at least two messages, every one `from` our DID, and the
-`last_seq` / last `ts` the write is about to follow. If the room is empty or
-gone, stop and report — that is a different situation from a keepalive, and it
-is not fixed by sending the approved body.
+that only the 7-day idle clock above would remain. That is the claim step 1 of
+"The write" exists to check; it is not settled here.
 
 Every write to this room goes through the gate, as in "The write" above — never
 a bare `--fetch`.
