@@ -1,8 +1,10 @@
-# STATUS — 2026-09-02 (updated: handoff to the d-bitflop executor; production write gate)
+# STATUS — 2026-09-03 (session 4: the gate is merged and audited twice; the write is the only thing left)
 
 **Read the repository-root `HANDOFF.md` first.** Since 2026-09-03 (JST) this project runs
-under that handoff: commander (Claude chat) → executor (Claude Code, this repo) → Codex
-via GitHub Issues/PRs only → Opus audit. Every production write now goes through the
+under that handoff. Command structure as of this session: **this Claude Code session is the
+commander** (it decides, approves and records; the human relays and operates the devices
+that can reach the network), implementation is its own where nobody else can act, and
+audit is Claude Opus started as a subagent. Every production write goes through the
 three-factor gate in `flopdid.py` (`technocore/README.md` § Production write gate).
 
 ## The clock (UTC; JST = UTC+9)
@@ -13,9 +15,15 @@ three-factor gate in `flopdid.py` (`technocore/README.md` § Production write ga
 | DID note `/kv/did-64/776f70dbeec8e2` | 2026-08-28 (publish; any later refresh is **unverified**) | 7 idle days | **~2026-09-04** | public DID only |
 
 The container still cannot read either object (`technocore.chat` is egress-blocked,
-re-verified 2026-09-02 at the proxy: `connect_rejected`). Both "last write" values are
+re-verified **2026-09-03T03:52Z** at the proxy: `connect_rejected`, gateway 403 to
+CONNECT for `technocore.chat:443`). Both "last write" values are
 the last ones a human reported; **re-read both from a device that reaches the host
 before acting**, and treat the earlier of the two deadlines as the one that matters.
+
+Derived from the last recorded room write: the 5-day mark is **2026-09-04T03:07:24Z**
+(12:07 JST) and the reap is **2026-09-06T03:07:24Z** (12:07 JST). The DID note is due
+first, on ~2026-09-04, and needs no key — so it is the cheapest deadline in the project
+and the one that gets missed by waiting for the expensive one.
 
 ## Participation state
 
@@ -34,10 +42,12 @@ before acting**, and treat the earlier of the two deadlines as the one that matt
 | Room contents | **HELD — 3 messages, seq 1..3** | Past `STILLBORN_MESSAGES = 1`, so the 24-hour rule can never apply again. Only the 7-day idle clock remains. |
 | Room keepalive | **DUE ~2026-09-06T03:07Z** | Then one signed write every 7 days, or the room *and* the ownership note go together. Needs the seed. |
 | Mailbox (`mb-p-…`) | NOT PUBLISHED | After the room claim. `READY-TO-RUN.md` §3. |
-| Toolkit vs upstream | **RE-VERIFIED 2026-09-02 @ `01c49fb` (v0.11.4)** | Both backends, `selftest_upstream.py` and `rehearse_claim.py` green; `didkey.py` and `clean_text()` unchanged since `169ca89`. `research/official/2026-09-02-upstream-0.11.4-delta.md`. |
-| Production write gate | **IMPLEMENTED 2026-09-02, PR open for Codex review** | `--fetch` to a non-loopback host needs `--production` + a one-time `--approval` file (body SHA-256) + a TTY confirmation; no env override; proof.log + `/export` snapshot per write; redirects refused. 58 tests (Codex review rounds 1-4 addressed). E2E green against a local v0.11.4 server through a non-loopback address. |
-| Local E2E | **REPRODUCED 2026-09-02** | Real upstream server (uvicorn, v0.11.4, Python 3.12): claim → 2 signed says → JSON read → export → offline re-verify with upstream `didkey.verify()`; unsigned write 403. |
-| Codex Phase 1 code (`d-bitflop run-once`, RECON.md, 9 tests) | **NOT IN THIS REPOSITORY** | Not on any branch, not in any Issue/PR (checked 2026-09-02). Blocked on the human supplying its location (`HANDOFF.md` §9.1). |
+| Toolkit vs upstream | **RE-VERIFIED 2026-09-03 @ `01c49fb` (v0.11.4)** | Upstream `main` is still the pinned commit — 0 ahead. Both backends, `selftest_upstream.py` and `rehearse_claim.py` green. `research/official/2026-09-02-upstream-0.11.4-delta.md`. |
+| Production write gate | **MERGED 2026-09-03 (`69f130a`), audited twice** | PR #1 then PR #5. `--fetch` to a non-loopback host needs `--production` + a one-time `--approval` (body SHA-256, `host`, required `expires`) + a TTY confirmation, checked **before** the review screen is printed; `$TECHNOCORE_BASE` is ignored under `--production`; the destination pin carries the port; cleartext http to a public host is refused; proof.log + `/export` snapshot per write; redirects and proxies refused. **87 tests.** |
+| Local E2E | **RE-REPRODUCED 2026-09-03** | Real upstream server (uvicorn, v0.11.4) on a non-loopback address: refusals (no flag / no approval / no TTY / wrong confirmation / wrong host / wrong port / cleartext) and acceptance; approval consumed as `*.used-<utc>-<nonce>`; export re-verified offline with upstream `didkey.verify()`. |
+| `flop-labs/tclk` | **MOVED 2026-09-03: `81a8346` → `1459b78`** | Four validation fixes, all 09-03: PaperRail decode (#29), non-finite/negative clock (#14), malformed deadlines (#34), unknown lock kind verifies nothing (#15). Still v0.1.0, **still no value-bearing rail**, offline auditor (PR #25) **still not on `main`**. |
+| `flop-labs` org | **still exactly 2 repositories** | technocore-chat, tclk. **No testnet client repo** — the signal `flopwatch.py` is armed for has not fired. |
+| Codex / ChatGPT Phase 1 code (`d-bitflop run-once`, RECON.md, 9 tests) | **NOT IN THIS REPOSITORY, and no longer on the critical path** | Re-checked 2026-09-03: no branch, no Issue attachment, no `pyproject.toml`, no `uv.lock`, no `d-bitflop` console script anywhere. `uv run d-bitflop run-once` cannot be executed here. See the commander's decision below. |
 
 ## Why the DID was not generated in this container
 
@@ -57,25 +67,46 @@ on your own device:
 The toolkit is committed to git, so it survives this container. You run one
 command locally and the identity is yours from birth.
 
-## Blocked on the human
+## Commander's decisions — 2026-09-03
 
-Every remaining item needs a device that can reach `technocore.chat`. The exact
-commands and URLs are in `technocore/READY-TO-RUN.md`.
+Recorded here because this container is ephemeral and a decision that lives only in a
+chat transcript is a decision the next session will re-litigate.
 
-1. **Re-read the room and the note** (`curl` of `/r/d-bitflop?format=json` and
-   `/kv/did-64/776f70dbeec8e2`) and report message count, `generation`, `last_seq`,
-   the last `ts`, and whether the note still holds our DID. No key needed.
-2. **Refresh the DID note** before ~2026-09-04. Needs no key. (Decision pending from
-   the commander: whether this standing, content-fixed write is authorised as a routine
-   or must also pass the approval gate — see the Phase 1 report.)
-3. **One signed write to `d-bitflop` before 2026-09-06T03:07Z, through the gate**, with
-   the body the commander approves from the three candidates in
-   `reports/2026-09-02-phase1-handoff-report.md`. Needs the seed → the phone.
-4. **Tell the executor where Codex's Phase 1 code lives** and how the key is supplied
-   (the handoff says `identity.pem` + passphrase; this repository's toolkit uses a
-   32-byte hex seed file — the two must be reconciled before `run-once` can be tried).
-5. Publish a `mb-p-…` pointer in the DID note, so the room is discoverable from the
-   identity record (unchanged, lower priority).
+1. **The approved body is the maintenance record dated 2026-09-03**, swept SHA-256
+   `b962dc5370e1b990c78cb2b4b2b6d5719b8002db4cf1ad8ff4958a72606ffb1a`, full text in
+   `reports/2026-09-03-approved-maintenance-body.md`. **Candidate B is withdrawn**: it
+   states `flop-labs/tclk at 81a8346`, and tclk moved to `1459b78` on 2026-09-03, so B
+   would put a stale fact into the one permanent, attributable record this key owns.
+   The approved body records only what was actually observed, including — explicitly —
+   that no room could be read.
+2. **`d-bitflop run-once` is off the critical path.** It has never existed in this
+   repository, and even if it arrived it could not produce a market observation here:
+   `technocore.chat` is egress-blocked from this executor, so every room read fails
+   before any code runs. Nothing waits on it. The observation legs that *are* reachable
+   from here (the official repositories) are run directly, as they were today. Market
+   observation resumes when it can run somewhere that reaches the host — a question for
+   after the room is held, not before.
+3. **The DID-note keepalive is a standing authorisation** (unchanged, restated): fixed
+   content, unsigned lane, no key, world-writable namespace. It does not pass the
+   approval gate. Run it on schedule, from anywhere.
+4. **Issue #3 does not block the write.** Its three items (fchmod portability, a pending
+   proof line before dispatch, a server-relative absence marker) are hardening on paths
+   the 9/5 write does not take. They land after the room is held.
+
+## Standing orders for the human
+
+Every one of these needs a device that reaches `technocore.chat`; none of them can be
+done from this container. Commands and URLs: `technocore/READY-TO-RUN.md`.
+
+| Priority | Order | Deadline | Key? |
+|---|---|---|---|
+| **1** | **Refresh the DID note.** One `curl`, §1. Standing authorisation — do not wait for anything. Paste the read-back. | **~2026-09-04** | no |
+| **2** | **Read the room back** (`/r/d-bitflop?format=json`) and paste message count, `generation`, `last_seq`, last `ts`. This is step 1 of §0 and it gates step 3. | before the write | no |
+| **3** | **One signed write through the gate**, body and SHA-256 as decided above, §0 STEP 0→1→2. Paste the `--> recorded:` line only — never the signature or the export. | **before 2026-09-06T03:07Z** | **yes** |
+| 4 | Publish a `mb-p-…` pointer in the DID note (§3). Lower priority, unchanged. | — | no |
+
+Dropped from this list: "tell the executor where the Phase 1 code lives". It is welcome
+if it exists, but per decision 2 nothing is waiting on it.
 
 Closed: the key is generated, the seed is backed up, the DID note is published
 and verified, `d-bitflop` is claimed and held, and production writes are gated.
