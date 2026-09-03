@@ -48,7 +48,12 @@ unless three independent things are all present:
        raw body, the swept body, the canonical bytes (hex), the nonce and the
        signature.
 
-No environment variable is consulted by the gate, so none can relax it. The
+No environment variable is consulted by the gate, so none can relax any of the
+three factors, and none can choose the destination: with `--production`,
+`$TECHNOCORE_BASE` is ignored. (Two variables still shape the run around it:
+`$FLOP_AGENT_HOME` moves the identity home, and with it where proof.log and the
+snapshots are written, and `$FLOP_FORCE_PURE` selects the signing backend.
+Neither can substitute for a factor.) The
 approval file is consumed (renamed) the moment the request is issued, so it can
 authorise at most one attempt. Every attempt — accepted, refused, or never sent —
 is appended to `<identity home>/logs/proof.log`, and an accepted room write is
@@ -533,8 +538,9 @@ def _send(url: str) -> int:
     except Exception as exc:  # noqa: BLE001 — every transport failure is classified below
         if _never_reached(exc):
             print(f"NOT SENT: {type(exc).__name__}: {exc}", file=sys.stderr)
-            print("Nothing reached the server, so nothing was spent. Retry from a "
-                  "network that reaches this host.", file=sys.stderr)
+            print("Nothing reached the server, so no nonce was spent there. Retry from a "
+                  "network that reaches this host — a production retry needs a FRESH "
+                  "approval: the one used here was consumed on dispatch.", file=sys.stderr)
             return 2
         # A timeout, a reset, a connection closed before the reply, a truncated
         # body: the request may have been stored. Saying "not sent" here would
@@ -604,16 +610,73 @@ def _write_kind(result: dict) -> str:
 
 
 def _write_target(result: dict) -> str:
+    """The target as the approval names it and as the readers address it.
+
+    For the unsigned note lane that is the note path **without** the `/kv/`
+    prefix: `cmd_didnote` carries `notePath` as `/kv/<shard>/<key>` for display,
+    and every reader here builds `{base}/kv/{target}`, so returning the display
+    form produced `/kv//kv/…` and read back a note that cannot exist."""
     kind = _write_kind(result)
     if kind == "say":
         return result["room"]
     if kind == "set":
         return f"{result['ns']}/{result['key']}"
-    return result["notePath"]
+    return result["notePath"].removeprefix("/kv/").lstrip("/")
 
 
 def _write_body(result: dict) -> str:
     return result["text"] if "text" in result else result["value"]
+
+
+def _destination(base: str) -> str:
+    """The destination an approval pins: `host` or `host:port`, lowercased.
+
+    The *hostname* alone is not the destination. `https://technocore.chat:8443`
+    and `http://technocore.chat` share it, and the second puts a signed
+    capability URL on the wire in cleartext — so the port travels with the host,
+    and `_cleartext_refusal` handles the scheme."""
+    parts = urllib.parse.urlsplit(base)
+    host = (parts.hostname or "").lower()
+    if not host:
+        return base.lower()
+    if ":" in host:  # an IPv6 literal: keep the brackets, or `[::1]:443` and
+        host = f"[{host}]"  # `[::1:443]` would render the same destination
+    try:
+        port = parts.port
+    except ValueError:
+        # A malformed port. Keep it visible rather than dropping it — but strip
+        # any userinfo first: this string is printed on the review screen and
+        # written to proof.log, and a password in a URL must not be persisted.
+        return parts.netloc.rpartition("@")[2].lower()
+    return f"{host}:{port}" if port is not None else host
+
+
+def _cleartext_refusal(base: str) -> str | None:
+    """Refuse `http://` to a public host under --production.
+
+    A signed URL is a replayable capability for as long as the record sits in
+    the server's anti-replay window, so handing one to a cleartext connection
+    gives it to every hop on the path. Private and reserved addresses stay
+    reachable over http: that is where a local upstream server is rehearsed
+    against, and no such address can be technocore.chat."""
+    parts = urllib.parse.urlsplit(base)
+    if parts.scheme == "https":
+        return None
+    host = parts.hostname or ""
+    try:
+        import ipaddress
+
+        addr = ipaddress.ip_address(host)
+        # 6to4 (2002::/16) embeds a public IPv4 address, and `is_private` says
+        # True for it. `2002:0808:0808::1` is 8.8.8.8 wearing a private label, so
+        # it is treated as the public address it carries.
+        six_to_four = addr.version == 6 and addr in ipaddress.ip_network("2002::/16")
+        if addr.is_private and not six_to_four:
+            return None
+    except ValueError:
+        pass
+    return (f"{base} is a cleartext {parts.scheme or 'http'} URL to a public host; a signed "
+            "URL is a replayable capability and does not go over cleartext. Use https.")
 
 
 def _refuse(reason: str) -> int:
@@ -623,7 +686,7 @@ def _refuse(reason: str) -> int:
     return EXIT_GATE_REFUSED
 
 
-def _load_approval(path: str, result: dict, did: str) -> dict | str:
+def _load_approval(path: str, result: dict, did: str, host: str) -> dict | str:
     """Read and check the one-time approval file. Returns the approval, or the
     reason it is not acceptable.
 
@@ -642,12 +705,31 @@ def _load_approval(path: str, result: dict, did: str) -> dict | str:
     if not isinstance(doc, dict):
         return "approval file must hold a JSON object"
     kind, target, body = _write_kind(result), _write_target(result), _write_body(result)
-    want = {"kind": kind, "target": target, "did": did, "sha256": body_sha256(body)}
+    # `host` is part of the approval because the approval authorises a write to a
+    # named service, not merely a body: the destination is as much a part of what
+    # a commander approves as the text, and pinning it here means no environment,
+    # alias or typo can point an approved signed URL — a replayable capability —
+    # at a host nobody approved. It carries the port when there is one, so
+    # `technocore.chat` does not authorise `technocore.chat:8443`.
+    want = {"kind": kind, "target": target, "did": did, "sha256": body_sha256(body),
+            "host": host}
     for field, expected in want.items():
         got = doc.get(field)
         if not isinstance(got, str) or got.strip() != expected:
             return (f"approval field {field!r} is {got!r}, but this write needs {expected!r}"
-                    + (" (SHA-256 of the swept body)" if field == "sha256" else ""))
+                    + (" (SHA-256 of the swept body)" if field == "sha256" else "")
+                    + (" (the host this write is addressed to)" if field == "host" else ""))
+    # `body_swept` is written for the human to read; if it is present it must
+    # describe the same body the hash commits to, or the file shows one text and
+    # authorises another.
+    swept_body = doc.get("body_swept")
+    if swept_body is not None:
+        if not isinstance(swept_body, str):
+            return f"approval field 'body_swept' must be a string, not {type(swept_body).__name__}"
+        if body_sha256(swept_body) != doc["sha256"].strip():
+            return ("approval field 'body_swept' does not hash to the approved 'sha256' "
+                    f"({body_sha256(swept_body)} vs {doc['sha256'].strip()}); the file shows "
+                    "one body and authorises another")
     approver = doc.get("approved_by")
     if not isinstance(approver, str) or not approver.strip():
         return "approval field 'approved_by' must name who approved this body"
@@ -656,16 +738,22 @@ def _load_approval(path: str, result: dict, did: str) -> dict | str:
         # prints must be edited by a person before it can authorise anything.
         return ("approval field 'approved_by' is still the placeholder "
                 f"{approver.strip()!r}; a person must write their name there")
+    # Required, not optional: an approval without an expiry is a standing
+    # authorisation for a body someone approved once, and a file left on a device
+    # would still open the production lane weeks later. The `approval` command
+    # emits 48 hours.
     expires = doc.get("expires")
-    if expires is not None:
-        import calendar
+    if expires is None:
+        return ("approval field 'expires' is required (UTC YYYY-MM-DDTHH:MM:SSZ); an "
+                "approval that never expires is a standing production-write capability")
+    import calendar
 
-        try:
-            exp = calendar.timegm(time.strptime(str(expires), "%Y-%m-%dT%H:%M:%SZ"))
-        except ValueError:
-            return f"approval field 'expires' {expires!r} is not YYYY-MM-DDTHH:MM:SSZ (UTC)"
-        if time.time() > exp:
-            return f"approval expired at {expires}"
+    try:
+        exp = calendar.timegm(time.strptime(str(expires), "%Y-%m-%dT%H:%M:%SZ"))
+    except ValueError:
+        return f"approval field 'expires' {expires!r} is not YYYY-MM-DDTHH:MM:SSZ (UTC)"
+    if time.time() > exp:
+        return f"approval expired at {expires}"
     if kind == "set" and result["ns"] in ("room-owners", "room-allow", "room-nonce"):
         # HANDOFF.md §2.6: ownership notes are not touched until Phase 2 needs them.
         if doc.get("ownership") is not True:
@@ -674,10 +762,18 @@ def _load_approval(path: str, result: dict, did: str) -> dict | str:
     return doc
 
 
-def _consume_approval(path: str) -> str:
+def _consume_approval(path: str, nonce: object = None) -> str:
     """Rename the approval so it cannot authorise a second attempt. Done before
-    the request leaves, so an interrupted send cannot be replayed on retry."""
-    used = f"{path}.used-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
+    the request leaves, so an interrupted send cannot be replayed on retry.
+
+    The nonce is in the name because the UTC stamp has one-second resolution:
+    two consumptions inside the same second would otherwise write the same name
+    and the first record would be silently replaced. The nonce is unique per
+    room by construction; the unsigned note lane has none, so it falls back to
+    a distinguishing suffix rather than a colliding one."""
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    tag = str(nonce) if nonce is not None else f"unsigned-{os.getpid()}"
+    used = f"{path}.used-{stamp}-{tag}"
     os.replace(path, used)
     return used
 
@@ -887,7 +983,7 @@ def _proof_preflight() -> str | None:
 def production_fetch(result: dict, args, raw_body: str) -> int:
     """The only path by which `--fetch` reaches a non-loopback host."""
     base = args.base
-    host = urllib.parse.urlsplit(base).hostname or base
+    host = _destination(base)
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     entry = {
         "ts": stamp, "host": host, "kind": _write_kind(result), "target": _write_target(result),
@@ -912,19 +1008,27 @@ def production_fetch(result: dict, args, raw_body: str) -> int:
         return refused(problem)
     if not getattr(args, "production", False):
         return refused(f"{host} is not loopback and --production was not given")
+    cleartext = _cleartext_refusal(base)
+    if cleartext:
+        return refused(cleartext)
     approval_path = getattr(args, "approval", None)
     if not approval_path:
         return refused("--approval <file> is required for a production write")
-    approval = _load_approval(approval_path, result, result["did"])
+    approval = _load_approval(approval_path, result, result["did"], host)
     if isinstance(approval, str):
         return refused(approval)
     entry["approval"] = {"file": approval_path, "sha256": approval["sha256"],
                          "approved_by": approval["approved_by"],
                          "created": approval.get("created"), "note": approval.get("note")}
-    _show_before_send(result, host, raw_body, approval_path)
+    # The TTY check comes BEFORE the review screen, not after. The screen exists
+    # to be read by a person about to type a confirmation; with no terminal there
+    # is nobody to read it, and printing it anyway writes the nonce and the
+    # signature — together a replayable capability — into whatever pipe, log or
+    # cron mail captured the run.
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         return refused("interactive confirmation needs a TTY on stdin and stdout; "
                        "a production write cannot be scripted or piped")
+    _show_before_send(result, host, raw_body, approval_path)
     expected = _write_target(result)
     try:
         typed = input(f"Type the target exactly ({expected}) to send, anything else aborts: ")
@@ -932,7 +1036,14 @@ def production_fetch(result: dict, args, raw_body: str) -> int:
         typed = ""
     if typed.strip() != expected:
         return refused("confirmation did not match; aborted by operator")
-    entry["approval"]["consumed_as"] = _consume_approval(approval_path)
+    try:
+        entry["approval"]["consumed_as"] = _consume_approval(approval_path, result.get("nonce"))
+    except OSError as exc:
+        # The approval could not be made single-use (read-only directory, a name
+        # that already exists). Nothing is sent — but the attempt still earns its
+        # proof line, which is what `refused` guarantees.
+        return refused(f"the approval file could not be consumed ({exc}); nothing was sent "
+                       "because an approval that survives a send is not single-use")
     dispatched_at = time.time()
     entry["dispatched_at"] = dispatched_at
     code = _send(result["url"])
@@ -1037,7 +1148,12 @@ def cmd_approval(args) -> None:
         clean = swept(args.body, MAX_TEXT_CHARS)
     else:
         if "/" not in args.target:
-            raise SystemExit("for kind=set the target is <ns>/<key>")
+            raise SystemExit(f"for kind={args.kind} the target is "
+                             + ("<ns>/<key>" if args.kind == "set" else "<shard>/<key>, the "
+                                "note path without the /kv/ prefix (see `fingerprint`)"))
+        if args.target.startswith("/kv/") or args.target.startswith("kv/"):
+            raise SystemExit(f"target {args.target!r} must not carry the /kv/ prefix; the "
+                             "readers add it")
         clean = swept(args.body, MAX_VALUE_CHARS)
     did = args.did
     if not did and (PUBLIC_DIR / "did.txt").exists():
@@ -1047,12 +1163,17 @@ def cmd_approval(args) -> None:
         did = did_from_pubkey(PUBKEY(load_seed()))
     if not is_did_like(did):
         raise SystemExit(f"not a valid did:key: {did!r}")
+    # The destination this approval will be checked against: `--host` if given,
+    # otherwise the one `--base` names — so an approval prepared for a rehearsal
+    # server matches that server, and the phone's default stays technocore.chat.
+    host = getattr(args, "host", None) or _destination(getattr(args, "base", None)
+                                                       or DEFAULT_BASE)
     doc = {
         "kind": args.kind, "target": args.target, "did": did, "sha256": body_sha256(clean),
-        "body_swept": clean, "approved_by": "<name of the approver>",
+        "host": host, "body_swept": clean, "approved_by": "<name of the approver>",
         "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "expires": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 48 * 3600)),
-        "note": "one-time; consumed on send; the tool checks kind/target/did/sha256",
+        "note": "one-time; consumed on send; the tool checks kind/target/did/sha256/host",
     }
     if args.kind == "set" and args.target.split("/", 1)[0] in ("room-owners", "room-allow"):
         doc["ownership"] = False
@@ -1287,14 +1408,31 @@ def main() -> None:
 
     ap = sub.add_parser("approval", parents=[common],
                         help="print the one-time approval JSON a production write would need")
-    ap.add_argument("target", help="room name for kind=say, or <ns>/<key> for kind=set")
+    ap.add_argument("target", help="room name for kind=say, <ns>/<key> for kind=set, or the "
+                                   "note path without /kv/ for kind=note-unsigned")
     ap.add_argument("body", help="the exact body that will be sent")
-    ap.add_argument("--kind", choices=("say", "set"), default="say")
+    ap.add_argument("--kind", choices=("say", "set", "note-unsigned"), default="say")
     ap.add_argument("--did", help="signer DID (default: identity/public/did.txt)")
+    ap.add_argument("--host", help="destination the write is addressed to, host or host:port "
+                                   "(default: the one --base names, else "
+                                   f"{urllib.parse.urlsplit(DEFAULT_BASE).hostname})")
 
     args = p.parse_args()
     if not getattr(args, "base", None):
-        args.base = os.environ.get("TECHNOCORE_BASE", DEFAULT_BASE)
+        # $TECHNOCORE_BASE is a convenience for pointing reads and the loopback
+        # test lane at a local server. A production write does not take it: the
+        # destination of a signed capability URL is named on the command line or
+        # it is the default host, so no exported variable — set by a profile, a
+        # forgotten `export`, or another process — can redirect an approved write.
+        # The approval's `host` field then has to agree with it as well, so
+        # `approval` refuses the variable too: otherwise a stray export in the
+        # phone's profile prints an approval for a host the write will not use,
+        # and the operator, told to leave `host` as printed, is handed a refusal
+        # at the one moment the clock is running.
+        if getattr(args, "production", False) or args.cmd == "approval":
+            args.base = DEFAULT_BASE
+        else:
+            args.base = os.environ.get("TECHNOCORE_BASE", DEFAULT_BASE)
     {
         "keygen": cmd_keygen, "did": cmd_did, "fingerprint": cmd_fingerprint,
         "say": cmd_say, "set": cmd_set, "claim": cmd_claim, "backup-check": cmd_backup_check,

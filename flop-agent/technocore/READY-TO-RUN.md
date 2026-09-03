@@ -20,9 +20,15 @@ anything, but both stall the job:
   `curl: (3) URL rejected: Malformed input to a URL function`.
 
 So **signed writes use `--fetch`**, which sends the request from inside
-`flopdid.py` and prints only the server's reply. Its exit code says which of the
-three things happened: `0` the server accepted it, `1` the server refused it (the
-reason is printed), `2` it never left the device (nothing was spent — retry).
+`flopdid.py` and prints only the server's reply. Its exit code says what
+happened: `0` the server accepted it, `1` the server refused it (the reason is
+printed), `2` it never left the device (no nonce was spent at the server — but a
+production retry needs a **fresh approval**, because the approval is consumed on
+dispatch, before the failure), `3` the gate
+refused before anything was sent (the missing factor is printed — nothing was
+spent), `4` **outcome unknown**: it was dispatched and the reply was lost, so the
+tool reads the target back and tells you what it found. Never retry on `4`
+without reading that line — see §0.
 
 Plain reads have nothing to sign and are ordinary `curl`s.
 
@@ -50,53 +56,47 @@ thirty seconds a week; that is the price of the guarantee, and it is cheap.
 
 ---
 
-## 0. HOLD THE ROOM — two messages, within 24 hours of the claim
+## 0. HOLD THE ROOM — one signed write every 7 days, through the gate
 
-Deadline **~2026-08-31T01:53Z**. Measured, not guessed:
-`research/official/2026-08-30-owned-room-retention.md`.
+**This is the live task.** Three messages were sent on 2026-08-30 (seq 1..3),
+which — if that is still the room's state — cleared the 24-hour stillborn rule
+for good and leaves only the 7-day idle clock. That count is the last value a
+human reported, and repository-root `HANDOFF.md` §4 marks it 「過去値。再確認が必要」;
+nothing in this project can currently read the room to confirm it. **Step 1 below
+is how you confirm it, and it is not optional.** The record of how the room got
+there is kept at the end of this section.
 
-The claim created the ownership *note*. It did not create the *room* — upstream
-creates a room on its first message. And a room holding **no more than one**
-message is "stillborn" and reaped after **24 hours**, not 7 days. When the room
-goes, the ownership note loses its guard and expires on its own 7-day clock, and
-the name returns to whoever asks next.
-
-So one message is worse than none. Send **two**, from the phone:
-
-```
-python3 flopdid.py say d-bitflop "<first line>"  --fetch
-python3 flopdid.py say d-bitflop "<second line>" --fetch
-```
-
-Both must be ≥16 characters and different from each other — 0.10.0 refuses
-cross-sender duplicate room text with a 422, and short strings are exempt from
-that filter but not from being pointless. This room is the permanent,
-attributable activity log, so make the lines worth re-reading; nobody else can
-ever write here, and `/export` hands the whole thing to anyone who asks.
-
-Check it took:
-
-```
-curl -sS https://technocore.chat/r/d-bitflop
-```
-
-Two records, both `from` our DID, both carrying a `sig`.
-
-### Then: one signed write every 7 days, forever — through the gate
+### The write — one signed write every 7 days, forever — through the gate
 
 Next due **2026-09-06T03:07Z (12:07 JST)**, from the last verified write
 (seq 3, `2026-08-30T03:07:24Z`). Since 2026-09-03 (JST) a production write is
 made only with a body the commander has approved (repo-root `HANDOFF.md` §2.5),
 and `flopdid.py` enforces that with three factors (`README.md` § Production write
-gate). The sequence on the phone:
+gate). The sequence on the phone, in this order:
 
 ```
+curl -sS "https://technocore.chat/r/d-bitflop?format=json"
 python3 flopdid.py backup-check
 python3 flopdid.py approval d-bitflop "<the approved body, exactly>"
 ```
 
+**Read that first line's output before going on.** Check three things: at least
+two messages, every one `from` our DID, and the `last_seq` and last `ts` this
+write is about to follow. Report those numbers. If the room is empty or gone,
+**stop** — that is a different situation from a keepalive, and sending the
+approved body does not fix it.
+
 Copy the printed JSON into `approval-1.json` in the current directory and set
-`approved_by` to your name. Then:
+`approved_by` to your name. Leave `host` (`technocore.chat`) and `expires` (48
+hours) as printed: the gate checks both, refuses an approval whose `host` is not
+the destination the write is addressed to — the port counts, and a cleartext
+`http://` URL to a public host is refused outright — and refuses one with no
+`expires` at all, because an approval that never expires is a standing
+production-write capability sitting in a file.
+
+**Generate the approval in the same sitting as the write, not in advance.** It
+expires 48 hours after `approval` is run, not 48 hours after the body was
+approved: one prepared on 9/3 for a write due 9/6 is already dead. Then:
 
 ```
 python3 flopdid.py say d-bitflop "<the approved body, exactly>" --fetch --production --approval approval-1.json
@@ -106,9 +106,15 @@ It shows the raw body, the swept body, the canonical bytes (hex), the nonce and
 the signature, and asks you to type `d-bitflop`. Compare the `body sha256` line
 with the one in the approval; if they differ the tool has already refused. On
 `HTTP 200` it prints `--> recorded: … generation=… seq=… nonce=…` — report those
-three numbers — and saves `logs/proof.log` and `logs/export-d-bitflop-<utc>.jsonl`.
+three numbers — and saves `logs/proof.log` and
+`logs/export-d-bitflop-<utc>-<nonce>.jsonl`.
 Never paste the signature or the export into a chat: both are replay material
 until traffic buries the record.
+
+Check the `host` line on the review screen before you type the room name; it must
+read `technocore.chat`. With `--production` the tool ignores `$TECHNOCORE_BASE`
+entirely — the destination is `--base` if you gave one, otherwise
+`technocore.chat` — so an exported variable cannot redirect an approved write.
 
 If it prints `OUTCOME UNKNOWN` (exit 4), the reply was lost after the request
 left the phone. The tool then reads the room back and says whether the record is
@@ -124,6 +130,22 @@ A write to the room refreshes the room, and through it
 the ownership note, the allow-list and the replay counter. It needs the seed, so
 it is a phone job. This is a *separate* clock from §1 — writing to the room does
 not refresh the DID note, and refreshing the DID note does not hold the room.
+
+### DONE 2026-08-30 — the stillborn deadline (kept as the record)
+
+A room holding **no more than one** message is "stillborn" and reaped after
+**24 hours**, not 7 days (`research/official/2026-08-30-owned-room-retention.md`).
+The claim created the ownership *note*; upstream creates the *room* on its first
+message, and when the room goes the ownership note loses its guard and the name
+returns to whoever asks next. So one message was worse than none.
+
+Three were sent (seq 1..3, last `2026-08-30T03:07:24Z`), which — *if that is
+still the room's state* — puts it past `STILLBORN_MESSAGES = 1` permanently, so
+that only the 7-day idle clock above would remain. That is the claim step 1 of
+"The write" exists to check; it is not settled here.
+
+Every write to this room goes through the gate, as in "The write" above — never
+a bare `--fetch`.
 
 ---
 
