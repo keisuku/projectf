@@ -42,7 +42,8 @@ and the one that gets missed by waiting for the expensive one.
 | Room contents | **HELD — 3 messages, seq 1..3** | Past `STILLBORN_MESSAGES = 1`, so the 24-hour rule can never apply again. Only the 7-day idle clock remains. |
 | Room keepalive | **DUE ~2026-09-06T03:07Z** | Then one signed write every 7 days, or the room *and* the ownership note go together. Needs the seed. |
 | Mailbox (`mb-p-…`) | NOT PUBLISHED | After the room claim. `READY-TO-RUN.md` §3. |
-| Toolkit vs upstream | **RE-VERIFIED 2026-09-03 @ `01c49fb` (v0.11.4)** | Upstream `main` is still the pinned commit — 0 ahead. Both backends, `selftest_upstream.py` and `rehearse_claim.py` green. `research/official/2026-09-02-upstream-0.11.4-delta.md`. |
+| Toolkit vs upstream | **RE-VERIFIED 2026-09-03; upstream now `674c2aa`** | Moved 4 commits past the `01c49fb` pin during this session (#675, #683, #684, #687), all edge/cache work, version still 0.11.4. **`src/didkey.py`, `src/store.py` and `src/config.py` are byte-identical to the pin**, so `SIG_PATTERN`, `IDLE_SECONDS = 7*86400` and `STILLBORN_MESSAGES = 1` are unchanged, and #687's duplicate key (`limit.py normalize_text`) folds case and whitespace but **not digits** — a weekly maintenance body differing only in numbers is not a duplicate. `selftest_upstream.py` and `rehearse_claim.py` green. |
+| Upstream `#417` (ours) | **still open; `#433` is not on `main`** | `scripts/stdlib_ed25519.py` absent from `origin/main` (only `bench/ed25519_backends.py`). A third party reported on the thread 2026-09-03 that #433 is CONFLICTING with no CI and no review. Nothing owed by us: `CONTRIBUTIONS.md` closed #417 out on 08-28. |
 | Production write gate | **MERGED 2026-09-03 (`69f130a`), audited twice** | PR #1 then PR #5. `--fetch` to a non-loopback host needs `--production` + a one-time `--approval` (body SHA-256, `host`, required `expires`) + a TTY confirmation, checked **before** the review screen is printed; `$TECHNOCORE_BASE` is ignored under `--production`; the destination pin carries the port; cleartext http to a public host is refused; proof.log + `/export` snapshot per write; redirects and proxies refused. **87 tests.** |
 | Local E2E | **RE-REPRODUCED 2026-09-03** | Real upstream server (uvicorn, v0.11.4) on a non-loopback address: refusals (no flag / no approval / no TTY / wrong confirmation / wrong host / wrong port / cleartext) and acceptance; approval consumed as `*.used-<utc>-<nonce>`; export re-verified offline with upstream `didkey.verify()`. |
 | `flop-labs/tclk` | **MOVED 2026-09-03: `81a8346` → `1459b78`** | Four validation fixes, all 09-03: PaperRail decode (#29), non-finite/negative clock (#14), malformed deadlines (#34), unknown lock kind verifies nothing (#15). Still v0.1.0, **still no value-bearing rail**, offline auditor (PR #25) **still not on `main`**. |
@@ -72,9 +73,11 @@ command locally and the identity is yours from birth.
 Recorded here because this container is ephemeral and a decision that lives only in a
 chat transcript is a decision the next session will re-litigate.
 
-1. **The approved body is the maintenance record dated 2026-09-03**, swept SHA-256
-   `b962dc5370e1b990c78cb2b4b2b6d5719b8002db4cf1ad8ff4958a72606ffb1a`, full text in
-   `reports/2026-09-03-approved-maintenance-body.md`. **Candidate B is withdrawn**: it
+1. **The approved body is the maintenance record dated 2026-09-03 (05:40Z revision)**,
+   swept SHA-256 `b1bb179aff91f61af7970d48b5e4472abdff4de00170c1ce668360e4f5a63748`,
+   full text in `reports/2026-09-03-approved-maintenance-body.md`. (The 04:00Z revision,
+   `b962dc53…`, is void: upstream moved to `674c2aa` an hour after it was approved, so it
+   would have written a stale claim.) **Candidate B is withdrawn**: it
    states `flop-labs/tclk at 81a8346`, and tclk moved to `1459b78` on 2026-09-03, so B
    would put a stale fact into the one permanent, attributable record this key owns.
    The approved body records only what was actually observed, including — explicitly —
