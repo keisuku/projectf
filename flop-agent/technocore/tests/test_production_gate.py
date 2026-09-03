@@ -18,7 +18,9 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import re
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -27,6 +29,7 @@ import pytest
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 RFC_SEED = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
 PROD = "https://technocore.chat"
+PROD_HOST = "technocore.chat"
 LOCAL = "http://127.0.0.1:8099"
 
 
@@ -68,13 +71,19 @@ def _say(mod, base, text="a body long enough to pass the length floor"):
     return mod.build_say(bytes.fromhex(RFC_SEED), "d-gate-test", text, base), text
 
 
+def _future(hours=48):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + hours * 3600))
+
+
 def _approval(mod, tmp_path, result, **override):
     doc = {
         "kind": "say",
         "target": result["room"],
         "did": result["did"],
         "sha256": mod.body_sha256(result["text"]),
+        "host": "technocore.chat",
         "approved_by": "test commander",
+        "expires": _future(),
     }
     doc.update(override)
     p = tmp_path / "approval.json"
@@ -204,6 +213,30 @@ def test_refused_without_a_tty(flopdid, tmp_path, monkeypatch):
     assert "TTY" in _proof(flopdid)[-1]["reason"]
 
 
+def test_a_non_tty_run_prints_no_signature_and_no_nonce(
+    flopdid, tmp_path, monkeypatch, capsys
+):
+    """Issue #4 item 1: the review screen is for a person about to confirm. With
+    no terminal there is nobody to read it, and printing it anyway writes the
+    nonce and the signature — together a replayable capability — into whatever
+    pipe or cron mail captured the run."""
+    result, raw = _say(flopdid, PROD)
+    path = _approval(flopdid, tmp_path, result)
+    monkeypatch.setattr(
+        sys, "stdin", type("NoTty", (), {"isatty": lambda self: False})()
+    )
+    code = _emit_code(flopdid, result, _args(PROD, production=True, approval=path), raw)
+    assert code == flopdid.EXIT_GATE_REFUSED and flopdid._test_sent == []
+    out = capsys.readouterr().out
+    assert result["sig"] not in out
+    assert not re.search(r"[A-Za-z0-9_-]{86}", out), (
+        "an 86-char signature reached stdout"
+    )
+    assert str(result["nonce"]) not in out and "nonce" not in out.lower()
+    assert result["did"] not in out
+    assert Path(path).exists(), "a refused run leaves the approval unconsumed"
+
+
 def test_refused_when_confirmation_does_not_match(flopdid, tmp_path, monkeypatch):
     result, raw = _say(flopdid, PROD)
     path = _approval(flopdid, tmp_path, result)
@@ -310,6 +343,73 @@ def test_environment_cannot_relax_the_gate(flopdid, tmp_path, monkeypatch):
     assert flopdid._test_sent == []
 
 
+def test_technocore_base_cannot_redirect_a_production_write(flopdid, monkeypatch):
+    """Issue #4 item 2: $TECHNOCORE_BASE points reads and the loopback test lane
+    at a local server. It must not be able to point an approved signed URL — a
+    replayable capability — at a host nobody approved."""
+    monkeypatch.setenv("TECHNOCORE_BASE", "https://evil.example.test")
+    monkeypatch.setattr(
+        sys, "argv", ["flopdid.py", "say", "d-gate-test", "a body", "--production"]
+    )
+    seen = {}
+    monkeypatch.setattr(flopdid, "cmd_say", lambda args: seen.update(base=args.base))
+    flopdid.main()
+    assert seen["base"] == flopdid.DEFAULT_BASE
+
+    # …while --base still names the destination explicitly, and a run that is not
+    # a production write keeps the convenience.
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["flopdid.py", "say", "d-gate-test", "a body", "--production", "--base", LOCAL],
+    )
+    flopdid.main()
+    assert seen["base"] == LOCAL
+    monkeypatch.setattr(sys, "argv", ["flopdid.py", "say", "d-gate-test", "a body"])
+    flopdid.main()
+    assert seen["base"] == "https://evil.example.test"
+
+
+def test_an_approval_for_another_host_is_refused(flopdid, tmp_path, monkeypatch):
+    """The approval authorises a body *to a service*. A file approved for
+    technocore.chat does not authorise the same body somewhere else."""
+    other = "https://staging.example.test"
+    result, raw = _say(flopdid, other)
+    path = _approval(flopdid, tmp_path, result)  # host: technocore.chat
+    _tty(monkeypatch, flopdid, "d-gate-test")
+    code = _emit_code(
+        flopdid, result, _args(other, production=True, approval=path), raw
+    )
+    assert code == flopdid.EXIT_GATE_REFUSED and flopdid._test_sent == []
+    reason = _proof(flopdid)[-1]["reason"]
+    assert "'host'" in reason and "staging.example.test" in reason
+    assert Path(path).exists()
+
+    # the same write, approved for the host it is actually addressed to, passes
+    path = _approval(flopdid, tmp_path, result, host="staging.example.test")
+    assert (
+        _emit_code(flopdid, result, _args(other, production=True, approval=path), raw)
+        == 0
+    )
+
+
+def _code_tokens(source: str) -> set[str]:
+    """The NAME tokens of `source`, with comments, strings and docstrings gone.
+
+    `textwrap.dedent` first: `inspect.getsource` of a method or a nested function
+    is indented, and the tokenizer rejects that as an unexpected indent."""
+    import io
+    import textwrap
+    import tokenize
+
+    names = set()
+    reader = io.StringIO(textwrap.dedent(source)).readline
+    for tok in tokenize.generate_tokens(reader):
+        if tok.type == tokenize.NAME:
+            names.add(tok.string)
+    return names
+
+
 def test_gate_reads_no_environment_variables():
     """The gate's own code must not consult os.environ — a structural check, so a
     future 'convenience' override cannot slip in without failing this test."""
@@ -327,7 +427,11 @@ def test_gate_reads_no_environment_variables():
             flopdid._emit,
         )
     )
-    assert "environ" not in gate and "getenv" not in gate
+    # Comments and strings are prose — they are allowed to say the word
+    # "environment", and the gate's own comments explain precisely why it reads
+    # nothing from there. What must not appear is code: an `os.environ` lookup or
+    # a `getenv` call. So compare on the code tokens alone.
+    assert _code_tokens(gate).isdisjoint({"environ", "getenv", "environb"})
 
 
 # --------------------------------------------------------- ownership namespaces
@@ -343,7 +447,9 @@ def test_ownership_note_needs_explicit_ownership_true(flopdid, tmp_path, monkeyp
         "target": "room-owners/d-gate-test",
         "did": result["did"],
         "sha256": flopdid.body_sha256(result["value"]),
+        "host": "technocore.chat",
         "approved_by": "test commander",
+        "expires": _future(),
     }
     path = tmp_path / "own.json"
     path.write_text(json.dumps(doc))
@@ -604,10 +710,14 @@ def test_the_approval_command_output_is_refused_until_edited(flopdid, tmp_path, 
     result = flopdid.build_say(
         bytes.fromhex(RFC_SEED), "d-gate-test", "an unedited template", PROD
     )
-    verdict = flopdid._load_approval(str(_write(tmp_path, doc)), result, result["did"])
+    verdict = flopdid._load_approval(
+        str(_write(tmp_path, doc)), result, result["did"], PROD_HOST
+    )
     assert isinstance(verdict, str) and "placeholder" in verdict
     doc["approved_by"] = "a real person"
-    verdict = flopdid._load_approval(str(_write(tmp_path, doc)), result, result["did"])
+    verdict = flopdid._load_approval(
+        str(_write(tmp_path, doc)), result, result["did"], PROD_HOST
+    )
     assert isinstance(verdict, dict)
 
 
@@ -950,6 +1060,168 @@ def test_empty_export_cannot_prove_absence(flopdid, monkeypatch):
         result, PROD, dispatched_at=__import__("time").time()
     )
     assert (code, outcome) == (4, "indeterminate")
+
+
+def _didnote(flopdid, base=PROD, mailbox=None, extra=None):
+    args = argparse.Namespace(base=base, mailbox=mailbox, extra=extra)
+    captured = {}
+    real_emit = flopdid._emit
+    try:
+        flopdid._emit = lambda result, a, raw_body=None: captured.update(
+            result=result, raw=raw_body
+        )
+        flopdid.cmd_didnote(args)
+    finally:
+        flopdid._emit = real_emit
+    return captured["result"], captured["raw"]
+
+
+def test_the_note_lane_readback_url_carries_one_kv_prefix(flopdid, monkeypatch):
+    """Issue #4 item 3: `cmd_didnote` carries `notePath` as `/kv/<shard>/<key>`
+    for display, and every reader builds `{base}/kv/{target}` — so the display
+    form produced `/kv//kv/…` and read back a note that cannot exist."""
+    result, _ = _didnote(flopdid)
+    target = flopdid._write_target(result)
+    assert not target.startswith("/kv/") and not target.startswith("kv/")
+    assert result["notePath"] == f"/kv/{target}"
+
+    urls = []
+    banner = "!! UNTRUSTED CONTENT\n\n"
+    monkeypatch.setattr(
+        flopdid,
+        "_get",
+        lambda url, timeout=30: (
+            urls.append(url) or (200, {}, (banner + result["value"]).encode())
+        ),
+    )
+    assert flopdid._readback(result, PROD, dispatched_at=0.0)[:2] == (
+        0,
+        "accepted-by-readback",
+    )
+    flopdid._snapshot_after_send(result, PROD, "20260903T000000Z")
+    assert urls and all(u.startswith(f"{PROD}/kv/") for u in urls)
+    assert not any("/kv//kv/" in u or u.count("/kv/") > 1 for u in urls)
+
+
+def test_the_approval_command_covers_the_note_lane(
+    flopdid, capsys, tmp_path, monkeypatch
+):
+    """…so `didnote … --fetch --production` has a documented path through the gate."""
+    result, raw = _didnote(flopdid)
+    target = flopdid._write_target(result)
+    flopdid.cmd_approval(
+        argparse.Namespace(
+            kind="note-unsigned", target=target, body=raw, did=result["did"]
+        )
+    )
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["kind"] == "note-unsigned" and doc["target"] == target
+    assert doc["host"] == "technocore.chat"
+    doc["approved_by"] = "a real person"
+    path = tmp_path / "note-approval.json"
+    path.write_text(json.dumps(doc))
+    assert isinstance(
+        flopdid._load_approval(str(path), result, result["did"], PROD_HOST), dict
+    )
+
+    # the /kv/ prefix belongs to the readers, not to the approved target
+    with pytest.raises(SystemExit):
+        flopdid.cmd_approval(
+            argparse.Namespace(
+                kind="note-unsigned",
+                target=f"/kv/{target}",
+                body=raw,
+                did=result["did"],
+            )
+        )
+
+
+def test_body_swept_must_hash_to_the_approved_sha256(flopdid, tmp_path):
+    """Issue #4 item 4: `body_swept` is what a person reads in the file. If it
+    disagrees with the hash, the file shows one body and authorises another."""
+    result, _ = _say(flopdid, PROD)
+    path = _approval(flopdid, tmp_path, result, body_swept="something else entirely")
+    verdict = flopdid._load_approval(path, result, result["did"], PROD_HOST)
+    assert isinstance(verdict, str) and "body_swept" in verdict
+    path = _approval(flopdid, tmp_path, result, body_swept=result["text"])
+    assert isinstance(
+        flopdid._load_approval(path, result, result["did"], PROD_HOST), dict
+    )
+
+
+def test_an_approval_without_an_expiry_is_refused(flopdid, tmp_path):
+    """Issue #4 item 7: an approval that never expires is a standing
+    production-write capability sitting in a file."""
+    result, _ = _say(flopdid, PROD)
+    doc = json.loads(Path(_approval(flopdid, tmp_path, result)).read_text())
+    doc.pop("expires")
+    path = tmp_path / "no-expiry.json"
+    path.write_text(json.dumps(doc))
+    verdict = flopdid._load_approval(str(path), result, result["did"], PROD_HOST)
+    assert isinstance(verdict, str) and "expires" in verdict
+
+
+def test_two_consumptions_in_one_second_do_not_collide(flopdid, tmp_path, monkeypatch):
+    """Issue #4 item 7: the UTC stamp has one-second resolution, so two
+    consumptions inside the same second would write the same name and the first
+    record would be replaced. The nonce distinguishes them."""
+    frozen = time.gmtime(0)  # captured before the patch: flopdid.time IS this module
+    monkeypatch.setattr(flopdid.time, "gmtime", lambda *a: frozen)
+    first, second = tmp_path / "a.json", tmp_path / "b.json"
+    first.write_text("{}")
+    second.write_text("{}")
+    used_a = flopdid._consume_approval(str(first), 1788000000001)
+    used_b = flopdid._consume_approval(str(second), 1788000000002)
+    assert used_a != used_b
+    assert Path(used_a).exists() and Path(used_b).exists()
+
+
+def test_an_approval_that_cannot_be_consumed_sends_nothing_but_leaves_a_proof(
+    flopdid, tmp_path, monkeypatch
+):
+    """Issue #4 item 7: a failed rename must not escape as an unrecorded
+    traceback — nothing is sent, and the attempt still earns its proof line."""
+    result, raw = _say(flopdid, PROD)
+    path = _approval(flopdid, tmp_path, result)
+    _tty(monkeypatch, flopdid, "d-gate-test")
+
+    def boom(p, nonce=None):
+        raise OSError(30, "Read-only file system")
+
+    monkeypatch.setattr(flopdid, "_consume_approval", boom)
+    code = _emit_code(flopdid, result, _args(PROD, production=True, approval=path), raw)
+    assert code == flopdid.EXIT_GATE_REFUSED and flopdid._test_sent == []
+    entry = _proof(flopdid)[-1]
+    assert entry["outcome"] == "gate-refused" and "consumed" in entry["reason"]
+
+
+def test_gitignore_denies_key_shapes_by_default():
+    """Issue #4 item 5: a key that leaks does so under a name nobody listed. The
+    ignore rules cover the shape, so a variant is ignored by default; the one
+    file that must stay tracked is checked too, because a deny-by-default list is
+    easy to over-tighten."""
+    import subprocess
+
+    repo = Path(__file__).resolve().parents[3]
+    if not (repo / ".git").exists():
+        pytest.skip("not a git checkout")
+    must_ignore = [
+        "flop-agent/did_seed.txt",
+        "flop-agent/identity.pem.bak",
+        "flop-agent/seed_backup.txt",
+        "flop-agent/key.hex",
+        "flop-agent/secrets.tar.gz",
+        "approval-1.json.used-20260905T000000Z",
+    ]
+    for path in must_ignore:
+        done = subprocess.run(
+            ["git", "check-ignore", "-q", path], cwd=repo, check=False
+        )
+        assert done.returncode == 0, f"{path} is not ignored"
+    done = subprocess.run(
+        ["git", "check-ignore", "-q", ".env.example"], cwd=repo, check=False
+    )
+    assert done.returncode == 1, ".env.example must stay tracked"
 
 
 def test_an_unwritable_proof_log_refuses_before_anything_is_consumed(

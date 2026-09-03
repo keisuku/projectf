@@ -1,12 +1,19 @@
 # ---------------------------------------------------------------
 # SECRETS — never commit. Deny-by-default for key material.
 # ---------------------------------------------------------------
+# Deny by SHAPE, not by exact name: a key that leaks does so under a name nobody
+# listed — did_seed.txt, identity.pem.bak, seed_backup.txt. Every pattern below
+# is a substring or an extension family, so a variant is ignored by default and
+# has to be un-ignored on purpose.
 secrets/
 **/secrets/
+secrets*
 *.key
+*key*.hex
 *.pem
+*.pem.*
 *.seed
-*seed*.hex
+*seed*
 *.priv
 *private*
 .env
@@ -47,6 +54,7 @@ export-*.jsonl
 *.export.jsonl
 proof.log
 approval*.json
+approval*.json.*
 run-latest.json
 market-latest.json
 

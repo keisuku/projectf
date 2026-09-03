@@ -97,23 +97,42 @@ on the destination rather than on a mode switch:
 | loopback (`localhost`, `127.0.0.0/8`, `::1`) — a locally hosted technocore-chat | sent unconditionally: the test lane |
 | anything else | **refused (exit 3)** unless all three factors below are present |
 
+The gate governs what the tool **sends**. `say` / `set` / `claim` without
+`--fetch` still print a signed, production-ready capability URL — by design, and
+treated as a secret — with no approval required and no proof entry written;
+what is gated is handing that URL to the network from here.
+
 1. `--production` on the command line.
 2. `--approval <file>`: a JSON file the human writes **after** the commander approves,
    carrying `kind`, `target`, `did`, `sha256` (SHA-256 of the **swept** body as UTF-8),
-   `approved_by` (a person's name; the printed placeholder is refused), and optionally
-   `expires` (UTC `YYYY-MM-DDTHH:MM:SSZ`). Every field
+   `host` (the host the write is addressed to), `approved_by` (a person's name; the
+   printed placeholder is refused), and `expires` (UTC `YYYY-MM-DDTHH:MM:SSZ`,
+   required — an approval that never expires is a standing production-write
+   capability). If it also carries `body_swept`, that text must hash to `sha256`,
+   so the file cannot show one body and authorise another. Every field
    is checked against the write about to happen. `python3 flopdid.py approval <room>
-   "<body>"` prints the JSON to start from; it never writes it. An ownership-namespace
+   "<body>"` prints the JSON to start from; it never writes it (`--kind note-unsigned
+   <shard>/<key>` covers the DID-note lane, so `didnote … --fetch --production` has a
+   path through the gate). An ownership-namespace
    write (`room-owners`, `room-allow`) additionally needs `"ownership": true`
    (`HANDOFF.md` §2.6).
 3. A confirmation typed on a real TTY, after the tool has shown the raw body, the swept
    body, the canonical string and its bytes in hex, the nonce and the signature. Piped
    or scripted stdin is refused.
 
-No environment variable is read by the gate (a test asserts it structurally). The
-approval file is renamed `*.used-<utc>` the instant the request is issued — before the
-server answers — so one approval authorises one attempt, and a transport failure
-(exit 2) or a server refusal (exit 1) both require a fresh approval. That is deliberate.
+No environment variable is read by the gate (a test asserts it structurally, over the
+code tokens rather than the prose). `$TECHNOCORE_BASE` still points reads and the
+loopback test lane at a local server, but a production write does not take it: with
+`--production` the destination is `--base` if given and otherwise the default host, and
+the approval's `host` must agree with it — so nothing exported into the environment can
+redirect an approved capability URL. The review screen is printed only once a TTY is
+confirmed present, so a piped or scripted run leaks neither the nonce nor the signature.
+
+The approval file is renamed `*.used-<utc>-<nonce>` the instant the request is issued —
+before the server answers — so one approval authorises one attempt, and a transport
+failure (exit 2) or a server refusal (exit 1) both require a fresh approval. That is
+deliberate. The nonce is in the name because the stamp has one-second resolution; if the
+rename fails, nothing is sent and the attempt still earns its proof line.
 
 Neither the write nor the post-write reads follow a redirect: a `3xx` is reported as
 a refusal (exit 1) and the signed URL is never forwarded to a host the operator did not
