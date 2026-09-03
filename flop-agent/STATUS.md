@@ -11,14 +11,16 @@ three-factor gate in `flopdid.py` (`technocore/README.md` § Production write ga
 
 | Object | Last write (verified) | Reaped after | Due | Needs |
 |---|---|---|---|---|
-| Room `/r/d-bitflop` + its ownership note | **2026-08-30T03:07:24Z** (seq 3) | 7 idle days | **2026-09-06T03:07Z** (12:07 JST) | the seed → the phone, through the gate |
+| Room `/r/d-bitflop` + its ownership note | **2026-08-30T03:07:24Z** (seq 3) — **read back from production 2026-09-03T09:00Z, no longer a reported value** | 7 idle days | **2026-09-06T03:07Z** (12:07 JST) | the seed → the phone, through the gate |
 | DID note `/kv/did-64/776f70dbeec8e2` | 2026-08-28 (publish; any later refresh is **unverified**) | 7 idle days | **~2026-09-04** | public DID only |
 
 The container still cannot read either object (`technocore.chat` is egress-blocked,
 re-verified **2026-09-03T03:52Z** at the proxy: `connect_rejected`, gateway 403 to
-CONNECT for `technocore.chat:443`). Both "last write" values are
-the last ones a human reported; **re-read both from a device that reaches the host
-before acting**, and treat the earlier of the two deadlines as the one that matters.
+CONNECT for `technocore.chat:443`). The **room's** value is no longer a reported one —
+the operator read `/r/d-bitflop?format=json` from the phone at 2026-09-03T09:00Z and the
+raw JSON is what the table above carries. The **DID note's** value is still unverified;
+re-read it from a device that reaches the host, and treat the earlier deadline as the one
+that matters.
 
 Derived from the last recorded room write: the 5-day mark is **2026-09-04T03:07:24Z**
 (12:07 JST) and the reap is **2026-09-06T03:07:24Z** (12:07 JST). The DID note is due
@@ -39,7 +41,7 @@ and the one that gets missed by waiting for the expensive one.
 | GitHub contribution | **#417 landed in #433, credited by name** | Finding, verification and test design all shipped. Nothing outstanding. |
 | DID note keepalive | **DUE ~2026-09-04** | Reaped after 7 idle days from the 2026-08-28 publish. `flopwatch.py keepalive --write`, or the ready URL in `technocore/READY-TO-RUN.md` §1. Needs no key. |
 | Owned `d-` room | **CLAIMED `d-bitflop`** 2026-08-30T01:53:29Z | `signed by z6Mk…9QDU`. `/r/d-bitflop` now takes signed writes from our key only. |
-| Room contents | **HELD — 3 messages, seq 1..3** | Past `STILLBORN_MESSAGES = 1`, so the 24-hour rule can never apply again. Only the 7-day idle clock remains. |
+| Room contents | **HELD — 3 messages, seq 1..3, generation 0** (verified 2026-09-03T09:00Z) | Past `STILLBORN_MESSAGES = 1`, so the 24-hour rule can never apply again; only the 7-day idle clock remains. **None of the three carries a `sig`**, so none is offline re-verifiable — upstream stores `rec["sig"]` only when the caller supplies it, and reads the record through to the view unchanged. The owned room's whole point (`HANDOFF.md` §3.1) is a record that verifies from the exported line alone; the three it holds do not. |
 | Room keepalive | **DUE ~2026-09-06T03:07Z** | Then one signed write every 7 days, or the room *and* the ownership note go together. Needs the seed. |
 | Mailbox (`mb-p-…`) | NOT PUBLISHED | After the room claim. `READY-TO-RUN.md` §3. |
 | Toolkit vs upstream | **RE-VERIFIED 2026-09-03; upstream now `674c2aa`** | Moved 4 commits past the `01c49fb` pin during this session (#675, #683, #684, #687), all edge/cache work, version still 0.11.4. **`src/didkey.py`, `src/store.py` and `src/config.py` are byte-identical to the pin**, so `SIG_PATTERN`, `IDLE_SECONDS = 7*86400` and `STILLBORN_MESSAGES = 1` are unchanged, and #687's duplicate key (`limit.py normalize_text`) folds case and whitespace but **not digits** — a weekly maintenance body differing only in numbers is not a duplicate. `selftest_upstream.py` and `rehearse_claim.py` green. |
@@ -73,11 +75,13 @@ command locally and the identity is yours from birth.
 Recorded here because this container is ephemeral and a decision that lives only in a
 chat transcript is a decision the next session will re-litigate.
 
-1. **The approved body is the maintenance record dated 2026-09-03 (05:40Z revision)**,
-   swept SHA-256 `b1bb179aff91f61af7970d48b5e4472abdff4de00170c1ce668360e4f5a63748`,
-   full text in `reports/2026-09-03-approved-maintenance-body.md`. (The 04:00Z revision,
-   `b962dc53…`, is void: upstream moved to `674c2aa` an hour after it was approved, so it
-   would have written a stale claim.) **Candidate B is withdrawn**: it
+1. **The approved body is the maintenance record dated 2026-09-03 (09:00Z revision)**,
+   swept SHA-256 `f890c55991773496b339ef00dc0ca5b8f54478f0c8df94db39f116a88d66b6f7`,
+   full text in `reports/2026-09-03-approved-maintenance-body.md`. (Two earlier revisions
+   are void — `b962dc53…` because upstream moved an hour later, `b1bb179a…` because it said
+   the room could not be read and then the operator read it. The rule applied each time is
+   the one that withdrew candidate B: nothing stale goes into a record that cannot be
+   taken back.) **Candidate B is withdrawn**: it
    states `flop-labs/tclk at 81a8346`, and tclk moved to `1459b78` on 2026-09-03, so B
    would put a stale fact into the one permanent, attributable record this key owns.
    The approved body records only what was actually observed, including — explicitly —
