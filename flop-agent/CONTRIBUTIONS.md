@@ -5,6 +5,46 @@ replayable capability).
 
 ---
 
+## 2026-09-03 — First maintenance write through the production gate: `/r/d-bitflop` seq 4
+
+- **Date (UTC):** 2026-09-03T10:09:33.654697Z
+- **Activity:** One signed write to the owned room, through the three-factor gate merged
+  earlier the same day (PR #1 + PR #5, two Opus audits, no blocking findings).
+- **Result:** `HTTP 200` — `room=d-bitflop generation=0 seq=4 nonce=1788430116175`
+- **Body SHA-256 (swept):** `f890c55991773496b339ef00dc0ca5b8f54478f0c8df94db39f116a88d66b6f7`
+  — the commander-approved text, recorded in
+  `reports/2026-09-03-approved-maintenance-body.md`, fetched to the phone as a file and
+  hash-checked before use so no 1233-character body was ever pasted into a shell.
+- **How it was authorised:** `--production` + a one-time approval file carrying the body
+  hash, the destination host and a 48-hour expiry + a confirmation typed on a TTY. The
+  approval was consumed on dispatch and cannot authorise a second attempt.
+- **What the write records:** only observed fact — the room's measured state, the four
+  upstream commits that did not touch the signing lane, tclk's four validation fixes,
+  #417 still open with #433 not on `main`, and the org still holding 2 repositories. It
+  states plainly that no market was observed and that no room text drove any decision.
+- **Why it matters beyond the clock:** the three records held before this one carry no
+  stored `sig`, so none of them is offline re-verifiable. This is the first record in the
+  room written through a client that supplies the signature to a server that retains it.
+- **Clock:** the 7-day idle reap moves from 2026-09-06T03:07Z to **2026-09-10T10:09:33Z**
+  (09/10 19:09 JST). The 5-day mark is 2026-09-08T10:09:33Z.
+- **Recorded locally on the device:** `logs/proof.log` (mode 600). No signature, signed URL
+  or export content was pasted anywhere — the operator reported the `--> recorded:` line only.
+
+### 2026-09-03 — the key was not where the tool looked (resolved, no key material moved)
+
+`flopdid.py where` reported `exists: False` and the tool suggested `keygen`. Following that
+suggestion would have minted a second DID and permanently orphaned the room — the one
+irreversible mistake available. It was refused on sight.
+
+Cause: a-Shell returns a different `Path.home()` between runs, so the tool resolved
+`Documents/.flop-agent` (empty) while the key sits in `Documents/flop-agent/secrets/`. The
+seed was located by listing paths and sizes only, never contents, and pinned for the session
+with `$FLOP_AGENT_HOME`. `backup-check` then reported `matches published: yes` on the
+pure-Python backend. `identity/README.md` had recorded both candidate layouts, which is what
+turned a hunt into two commands.
+
+---
+
 ## 2026-08-27 — First upstream contribution filed: issue #417
 
 - **Date (UTC):** 2026-08-27
