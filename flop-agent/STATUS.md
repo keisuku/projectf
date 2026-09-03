@@ -1,4 +1,4 @@
-# STATUS — 2026-09-03 (session 4: the gate is merged and audited twice; the write is the only thing left)
+# STATUS — 2026-09-03 (session 4: the gate is merged, audited twice, and the write LANDED at seq 4)
 
 **Read the repository-root `HANDOFF.md` first.** Since 2026-09-03 (JST) this project runs
 under that handoff. Command structure as of this session: **this Claude Code session is the
@@ -11,7 +11,7 @@ three-factor gate in `flopdid.py` (`technocore/README.md` § Production write ga
 
 | Object | Last write (verified) | Reaped after | Due | Needs |
 |---|---|---|---|---|
-| Room `/r/d-bitflop` + its ownership note | **2026-08-30T03:07:24Z** (seq 3) — **read back from production 2026-09-03T09:00Z, no longer a reported value** | 7 idle days | **2026-09-06T03:07Z** (12:07 JST) | the seed → the phone, through the gate |
+| Room `/r/d-bitflop` + its ownership note | **2026-09-03T10:09:33Z** (seq 4) — **written through the gate, HTTP 200, server-assigned values** | 7 idle days | **2026-09-10T10:09:33Z** (09/10 19:09 JST) | the seed → the phone, through the gate |
 | DID note `/kv/did-64/776f70dbeec8e2` | 2026-08-28 (publish; any later refresh is **unverified**) | 7 idle days | **~2026-09-04** | public DID only |
 
 The container still cannot read either object (`technocore.chat` is egress-blocked,
@@ -22,10 +22,11 @@ raw JSON is what the table above carries. The **DID note's** value is still unve
 re-read it from a device that reaches the host, and treat the earlier deadline as the one
 that matters.
 
-Derived from the last recorded room write: the 5-day mark is **2026-09-04T03:07:24Z**
-(12:07 JST) and the reap is **2026-09-06T03:07:24Z** (12:07 JST). The DID note is due
-first, on ~2026-09-04, and needs no key — so it is the cheapest deadline in the project
-and the one that gets missed by waiting for the expensive one.
+Derived from the write that landed: the 5-day mark is **2026-09-08T10:09:33Z** (09/08
+19:09 JST) and the reap is **2026-09-10T10:09:33Z**. The room is no longer the pressing
+deadline — **the DID note is**, due ~2026-09-04, needing no key. It is the cheapest
+obligation in the project and the one that gets missed while attention is on the
+expensive one.
 
 ## Participation state
 
@@ -34,15 +35,15 @@ and the one that gets missed by waiting for the expensive one.
 | Permanent DID | **CREATED** `did:key:z6Mk…9QDU` | Generated on the user's iPhone. Validated by upstream `didkey.public_key()`. |
 | Seed backup | **DONE** (user-confirmed) | The one irreversible step, closed. |
 | DID note published | **YES** `/kv/did-64/776f70dbeec8e2` | Durable (notes have no ring). Verified by fetch. |
-| Signed check-in | NO | Blocked: same. URLs can be pre-built here. |
+| Signed check-in | **DONE 2026-09-03** | seq 4, through the production gate, body approved by the commander and hash-checked on the device. |
 | Signing toolkit | **DONE, and proven on-device** | The phone has no `cryptography`; the pure-Python fallback is what actually runs there. |
 | Testnet | **NOT STARTED** | No official start date. |
 | Miner / validator | Deferred | No specs published. |
 | GitHub contribution | **#417 landed in #433, credited by name** | Finding, verification and test design all shipped. Nothing outstanding. |
 | DID note keepalive | **DUE ~2026-09-04** | Reaped after 7 idle days from the 2026-08-28 publish. `flopwatch.py keepalive --write`, or the ready URL in `technocore/READY-TO-RUN.md` §1. Needs no key. |
 | Owned `d-` room | **CLAIMED `d-bitflop`** 2026-08-30T01:53:29Z | `signed by z6Mk…9QDU`. `/r/d-bitflop` now takes signed writes from our key only. |
-| Room contents | **HELD — 3 messages, seq 1..3, generation 0** (verified 2026-09-03T09:00Z) | Past `STILLBORN_MESSAGES = 1`, so the 24-hour rule can never apply again; only the 7-day idle clock remains. **None of the three carries a `sig`**, so none is offline re-verifiable — upstream stores `rec["sig"]` only when the caller supplies it, and reads the record through to the view unchanged. The owned room's whole point (`HANDOFF.md` §3.1) is a record that verifies from the exported line alone; the three it holds do not. |
-| Room keepalive | **DUE ~2026-09-06T03:07Z** | Then one signed write every 7 days, or the room *and* the ownership note go together. Needs the seed. |
+| Room contents | **HELD — 4 messages, seq 1..4, generation 0** (seq 4 written 2026-09-03T10:09:33Z) | Past `STILLBORN_MESSAGES = 1`, so the 24-hour rule can never apply again; only the 7-day idle clock remains. **Seq 1-3 carry no `sig`**, so none of them is offline re-verifiable — upstream stores `rec["sig"]` only when the caller supplies it, and reads the record through to the view unchanged. The owned room's whole point (`HANDOFF.md` §3.1) is a record that verifies from the exported line alone. **Seq 4 was written by a client that supplies the signature to a server that retains it — confirm on the next read that it carries a `sig`, since that is the property the room exists for.** |
+| Room keepalive | **DONE 2026-09-03; next due ~2026-09-10T10:09Z** | Then one signed write every 7 days, or the room *and* the ownership note go together. Needs the seed. |
 | Mailbox (`mb-p-…`) | NOT PUBLISHED | After the room claim. `READY-TO-RUN.md` §3. |
 | Toolkit vs upstream | **RE-VERIFIED 2026-09-03; upstream now `674c2aa`** | Moved 4 commits past the `01c49fb` pin during this session (#675, #683, #684, #687), all edge/cache work, version still 0.11.4. **`src/didkey.py`, `src/store.py` and `src/config.py` are byte-identical to the pin**, so `SIG_PATTERN`, `IDLE_SECONDS = 7*86400` and `STILLBORN_MESSAGES = 1` are unchanged, and #687's duplicate key (`limit.py normalize_text`) folds case and whitespace but **not digits** — a weekly maintenance body differing only in numbers is not a duplicate. `selftest_upstream.py` and `rehearse_claim.py` green. |
 | Upstream `#417` (ours) | **still open; `#433` is not on `main`** | `scripts/stdlib_ed25519.py` absent from `origin/main` (only `bench/ed25519_backends.py`). A third party reported on the thread 2026-09-03 that #433 is CONFLICTING with no CI and no review. Nothing owed by us: `CONTRIBUTIONS.md` closed #417 out on 08-28. |
@@ -108,8 +109,9 @@ done from this container. Commands and URLs: `technocore/READY-TO-RUN.md`.
 | Priority | Order | Deadline | Key? |
 |---|---|---|---|
 | **1** | **Refresh the DID note.** One `curl`, §1. Standing authorisation — do not wait for anything. Paste the read-back. | **~2026-09-04** | no |
-| **2** | **Read the room back** (`/r/d-bitflop?format=json`) and paste message count, `generation`, `last_seq`, last `ts`. This is step 1 of §0 and it gates step 3. | before the write | no |
-| **3** | **One signed write through the gate**, body and SHA-256 as decided above, §0 STEP 0→1→2. Paste the `--> recorded:` line only — never the signature or the export. | **before 2026-09-06T03:07Z** | **yes** |
+| ~~2~~ | ~~Read the room back~~ — **DONE 2026-09-03T09:00Z**, first production read in the project's history. | — | — |
+| ~~3~~ | ~~One signed write through the gate~~ — **DONE 2026-09-03T10:09:33Z, seq 4, HTTP 200.** Next one due ~2026-09-10T10:09Z. | — | — |
+| **2** | On the next room read, check whether **seq 4 carries a `sig`** and seq 1-3 still do not. That settles whether the room now produces offline-verifiable records. | any time | no |
 | 4 | Publish a `mb-p-…` pointer in the DID note (§3). Lower priority, unchanged. | — | no |
 
 Dropped from this list: "tell the executor where the Phase 1 code lives". It is welcome
