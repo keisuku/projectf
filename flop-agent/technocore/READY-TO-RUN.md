@@ -20,9 +20,13 @@ anything, but both stall the job:
   `curl: (3) URL rejected: Malformed input to a URL function`.
 
 So **signed writes use `--fetch`**, which sends the request from inside
-`flopdid.py` and prints only the server's reply. Its exit code says which of the
-three things happened: `0` the server accepted it, `1` the server refused it (the
-reason is printed), `2` it never left the device (nothing was spent — retry).
+`flopdid.py` and prints only the server's reply. Its exit code says what
+happened: `0` the server accepted it, `1` the server refused it (the reason is
+printed), `2` it never left the device (nothing was spent — retry), `3` the gate
+refused before anything was sent (the missing factor is printed — nothing was
+spent), `4` **outcome unknown**: it was dispatched and the reply was lost, so the
+tool reads the target back and tells you what it found. Never retry on `4`
+without reading that line — see §0.
 
 Plain reads have nothing to sign and are ordinary `curl`s.
 
@@ -72,9 +76,14 @@ python3 flopdid.py approval d-bitflop "<the approved body, exactly>"
 Copy the printed JSON into `approval-1.json` in the current directory and set
 `approved_by` to your name. Leave `host` (`technocore.chat`) and `expires` (48
 hours) as printed: the gate checks both, refuses an approval whose `host` is not
-the host the write is addressed to, and refuses one with no `expires` at all —
-an approval that never expires is a standing production-write capability sitting
-in a file. Then:
+the destination the write is addressed to — the port counts, and a cleartext
+`http://` URL to a public host is refused outright — and refuses one with no
+`expires` at all, because an approval that never expires is a standing
+production-write capability sitting in a file.
+
+**Generate the approval in the same sitting as the write, not in advance.** It
+expires 48 hours after `approval` is run, not 48 hours after the body was
+approved: one prepared on 9/3 for a write due 9/6 is already dead. Then:
 
 ```
 python3 flopdid.py say d-bitflop "<the approved body, exactly>" --fetch --production --approval approval-1.json
@@ -117,11 +126,24 @@ The claim created the ownership *note*; upstream creates the *room* on its first
 message, and when the room goes the ownership note loses its guard and the name
 returns to whoever asks next. So one message was worse than none.
 
-Three were sent (seq 1..3, last `2026-08-30T03:07:24Z`), which puts the room
-past `STILLBORN_MESSAGES = 1` permanently: **the 24-hour rule can never apply
-again**, and only the 7-day idle clock above remains. Nothing here is left to do.
-Every write to this room now goes through the gate, as in "The write" above —
-never a bare `--fetch`.
+Three were sent (seq 1..3, last `2026-08-30T03:07:24Z`), which — *if that is
+still the room's state* — puts it past `STILLBORN_MESSAGES = 1` permanently, so
+that only the 7-day idle clock above would remain. That count is the last value a
+human reported, and repository-root `HANDOFF.md` §4 marks it 「過去値。再確認が必要」;
+no machine in this project can currently read the room to confirm it. So read it
+back **before** the write, from a device that reaches the host:
+
+```
+curl -sS "https://technocore.chat/r/d-bitflop?format=json"
+```
+
+and check three things: at least two messages, every one `from` our DID, and the
+`last_seq` / last `ts` the write is about to follow. If the room is empty or
+gone, stop and report — that is a different situation from a keepalive, and it
+is not fixed by sending the approved body.
+
+Every write to this room goes through the gate, as in "The write" above — never
+a bare `--fetch`.
 
 ---
 

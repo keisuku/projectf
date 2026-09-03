@@ -393,6 +393,81 @@ def test_an_approval_for_another_host_is_refused(flopdid, tmp_path, monkeypatch)
     )
 
 
+@pytest.mark.parametrize(
+    "base,approved,sends",
+    [
+        ("https://technocore.chat", "technocore.chat", True),
+        ("https://TECHNOCORE.CHAT", "technocore.chat", True),  # hostnames are caseless
+        ("https://technocore.chat:8443", "technocore.chat", False),  # a different port
+        ("https://technocore.chat:8443", "technocore.chat:8443", True),
+        ("https://technocore.chat@evil.example.test", "technocore.chat", False),
+        ("https://technocore.chat.", "technocore.chat", False),  # trailing dot
+        ("https://xn--tchnocore-p9i.chat", "technocore.chat", False),  # punycode
+    ],
+)
+def test_the_approval_pins_the_port_as_well_as_the_host(
+    flopdid, tmp_path, monkeypatch, base, approved, sends
+):
+    """`technocore.chat` must not authorise `technocore.chat:8443`: the port is
+    part of where a signed capability URL goes."""
+    result, raw = _say(flopdid, base)
+    path = _approval(flopdid, tmp_path, result, host=approved)
+    _tty(monkeypatch, flopdid, "d-gate-test")
+    code = _emit_code(flopdid, result, _args(base, production=True, approval=path), raw)
+    assert (code == 0) is sends
+    assert (flopdid._test_sent == [result["url"]]) is sends
+
+
+@pytest.mark.parametrize(
+    "base,sends",
+    [
+        ("https://technocore.chat", True),
+        ("http://technocore.chat", False),  # cleartext to a public host
+        ("http://technocore.chat:8080", False),
+        ("http://192.0.2.2:8801", True),  # a private address: the rehearsal lane
+        ("http://10.0.0.5:8080", True),
+    ],
+)
+def test_a_signed_url_does_not_go_over_cleartext_to_a_public_host(
+    flopdid, tmp_path, monkeypatch, base, sends
+):
+    """A signed URL is a replayable capability for as long as the record sits in
+    the server's anti-replay window; http hands it to every hop on the path.
+    Private addresses stay reachable, because that is where a local upstream
+    server is rehearsed against and none of them can be technocore.chat."""
+    result, raw = _say(flopdid, base)
+    path = _approval(flopdid, tmp_path, result, host=flopdid._destination(base))
+    _tty(monkeypatch, flopdid, "d-gate-test")
+    code = _emit_code(flopdid, result, _args(base, production=True, approval=path), raw)
+    assert (code == 0) is sends
+    if not sends:
+        assert "cleartext" in _proof(flopdid)[-1]["reason"]
+        assert Path(path).exists(), "a refused write does not consume the approval"
+
+
+def test_the_approval_command_defaults_its_host_to_the_base(flopdid, capsys):
+    """An approval prepared for a rehearsal server should match that server."""
+    flopdid.cmd_approval(
+        argparse.Namespace(
+            kind="say",
+            target="d-gate-test",
+            body="a body long enough to pass the length floor",
+            did=None,
+            base="http://192.0.2.2:8801",
+        )
+    )
+    assert json.loads(capsys.readouterr().out)["host"] == "192.0.2.2:8801"
+    flopdid.cmd_approval(
+        argparse.Namespace(
+            kind="say",
+            target="d-gate-test",
+            body="a body long enough to pass the length floor",
+            did=None,
+        )
+    )
+    assert json.loads(capsys.readouterr().out)["host"] == PROD_HOST
+
+
 def _code_tokens(source: str) -> set[str]:
     """The NAME tokens of `source`, with comments, strings and docstrings gone.
 
@@ -402,20 +477,20 @@ def _code_tokens(source: str) -> set[str]:
     import textwrap
     import tokenize
 
-    names = set()
+    names, strings = set(), []
     reader = io.StringIO(textwrap.dedent(source)).readline
     for tok in tokenize.generate_tokens(reader):
         if tok.type == tokenize.NAME:
             names.add(tok.string)
-    return names
+        elif tok.type == tokenize.STRING:
+            strings.append(tok.string)
+    return names, strings
 
 
-def test_gate_reads_no_environment_variables():
+def test_gate_reads_no_environment_variables(flopdid):
     """The gate's own code must not consult os.environ — a structural check, so a
     future 'convenience' override cannot slip in without failing this test."""
     import inspect
-
-    import flopdid
 
     gate = "".join(
         inspect.getsource(f)
@@ -427,11 +502,18 @@ def test_gate_reads_no_environment_variables():
             flopdid._emit,
         )
     )
-    # Comments and strings are prose — they are allowed to say the word
-    # "environment", and the gate's own comments explain precisely why it reads
-    # nothing from there. What must not appear is code: an `os.environ` lookup or
-    # a `getenv` call. So compare on the code tokens alone.
-    assert _code_tokens(gate).isdisjoint({"environ", "getenv", "environb"})
+    names, strings = _code_tokens(gate)
+    banned = {"environ", "getenv", "environb"}
+    # Comments are prose: the gate's own explain precisely why it reads nothing
+    # from the environment, and the word itself must not fail the test.
+    assert names.isdisjoint(banned), "the gate reads the environment"
+    # …but a name reached indirectly is still a read, and `getattr(os, "environ")`
+    # is spelled entirely in strings. So the string literals are checked too — the
+    # gate has no reason to contain any of these as text.
+    for text in strings:
+        assert not any(word in text for word in banned), (
+            f"a string literal in the gate names the environment: {text!r}"
+        )
 
 
 # --------------------------------------------------------- ownership namespaces
@@ -1167,13 +1249,19 @@ def test_two_consumptions_in_one_second_do_not_collide(flopdid, tmp_path, monkey
     record would be replaced. The nonce distinguishes them."""
     frozen = time.gmtime(0)  # captured before the patch: flopdid.time IS this module
     monkeypatch.setattr(flopdid.time, "gmtime", lambda *a: frozen)
-    first, second = tmp_path / "a.json", tmp_path / "b.json"
-    first.write_text("{}")
-    second.write_text("{}")
-    used_a = flopdid._consume_approval(str(first), 1788000000001)
-    used_b = flopdid._consume_approval(str(second), 1788000000002)
+    # The SAME approval path, consumed twice inside one frozen second — two
+    # different paths would produce different `.used-` names under any naming
+    # scheme, and would not test anything. This is the case `os.replace` silently
+    # clobbers: the first record would be gone.
+    path = tmp_path / "approval-1.json"
+    path.write_text('{"first": true}')
+    used_a = flopdid._consume_approval(str(path), 1788000000001)
+    path.write_text('{"second": true}')
+    used_b = flopdid._consume_approval(str(path), 1788000000002)
     assert used_a != used_b
     assert Path(used_a).exists() and Path(used_b).exists()
+    assert json.loads(Path(used_a).read_text()) == {"first": True}
+    assert json.loads(Path(used_b).read_text()) == {"second": True}
 
 
 def test_an_approval_that_cannot_be_consumed_sends_nothing_but_leaves_a_proof(

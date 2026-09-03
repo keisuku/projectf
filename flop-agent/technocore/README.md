@@ -121,12 +121,22 @@ what is gated is handing that URL to the network from here.
    or scripted stdin is refused.
 
 No environment variable is read by the gate (a test asserts it structurally, over the
-code tokens rather than the prose). `$TECHNOCORE_BASE` still points reads and the
-loopback test lane at a local server, but a production write does not take it: with
-`--production` the destination is `--base` if given and otherwise the default host, and
-the approval's `host` must agree with it — so nothing exported into the environment can
-redirect an approved capability URL. The review screen is printed only once a TTY is
-confirmed present, so a piped or scripted run leaks neither the nonce nor the signature.
+code tokens *and* the string literals, so a name reached indirectly is caught too).
+`$TECHNOCORE_BASE` still points reads and the loopback test lane at a local server, but
+a production write does not take it: with `--production` the destination is `--base` if
+given and otherwise the default host, and the approval's `host` must agree with it — so
+nothing exported into the environment can redirect an approved capability URL. That pin
+carries the **port** (`technocore.chat` does not authorise `technocore.chat:8443`), and
+a cleartext `http://` URL to a public host is refused outright, since a signed URL is a
+replayable capability and does not belong on the wire in the clear; private and reserved
+addresses stay reachable over http, because that is the rehearsal lane. The review
+screen is printed only once a TTY is confirmed present, so a piped or scripted run leaks
+neither the nonce nor the signature.
+
+Two variables outside the gate still shape the run: `$FLOP_AGENT_HOME` moves the
+identity home, and with it where `proof.log` and the snapshots land, and
+`$FLOP_FORCE_PURE` selects the signing backend. Neither can substitute for any of the
+three factors, and neither chooses the destination.
 
 The approval file is renamed `*.used-<utc>-<nonce>` the instant the request is issued —
 before the server answers — so one approval authorises one attempt, and a transport

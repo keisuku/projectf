@@ -48,7 +48,12 @@ unless three independent things are all present:
        raw body, the swept body, the canonical bytes (hex), the nonce and the
        signature.
 
-No environment variable is consulted by the gate, so none can relax it. The
+No environment variable is consulted by the gate, so none can relax any of the
+three factors, and none can choose the destination: with `--production`,
+`$TECHNOCORE_BASE` is ignored. (Two variables still shape the run around it:
+`$FLOP_AGENT_HOME` moves the identity home, and with it where proof.log and the
+snapshots are written, and `$FLOP_FORCE_PURE` selects the signing backend.
+Neither can substitute for a factor.) The
 approval file is consumed (renamed) the moment the request is issued, so it can
 authorise at most one attempt. Every attempt — accepted, refused, or never sent —
 is appended to `<identity home>/logs/proof.log`, and an accepted room write is
@@ -622,6 +627,47 @@ def _write_body(result: dict) -> str:
     return result["text"] if "text" in result else result["value"]
 
 
+def _destination(base: str) -> str:
+    """The destination an approval pins: `host` or `host:port`, lowercased.
+
+    The *hostname* alone is not the destination. `https://technocore.chat:8443`
+    and `http://technocore.chat` share it, and the second puts a signed
+    capability URL on the wire in cleartext — so the port travels with the host,
+    and `_cleartext_refusal` handles the scheme."""
+    parts = urllib.parse.urlsplit(base)
+    host = (parts.hostname or "").lower()
+    if not host:
+        return base.lower()
+    try:
+        port = parts.port
+    except ValueError:  # a malformed port; keep it visible rather than dropping it
+        return parts.netloc.lower()
+    return f"{host}:{port}" if port is not None else host
+
+
+def _cleartext_refusal(base: str) -> str | None:
+    """Refuse `http://` to a public host under --production.
+
+    A signed URL is a replayable capability for as long as the record sits in
+    the server's anti-replay window, so handing one to a cleartext connection
+    gives it to every hop on the path. Private and reserved addresses stay
+    reachable over http: that is where a local upstream server is rehearsed
+    against, and no such address can be technocore.chat."""
+    parts = urllib.parse.urlsplit(base)
+    if parts.scheme == "https":
+        return None
+    host = parts.hostname or ""
+    try:
+        import ipaddress
+
+        if ipaddress.ip_address(host).is_private:
+            return None
+    except ValueError:
+        pass
+    return (f"{base} is a cleartext {parts.scheme or 'http'} URL to a public host; a signed "
+            "URL is a replayable capability and does not go over cleartext. Use https.")
+
+
 def _refuse(reason: str) -> int:
     print("PRODUCTION WRITE REFUSED: " + reason, file=sys.stderr)
     print("Nothing was sent and no nonce reached the server. See HANDOFF.md §2.5 / §5.4.",
@@ -652,7 +698,8 @@ def _load_approval(path: str, result: dict, did: str, host: str) -> dict | str:
     # named service, not merely a body: the destination is as much a part of what
     # a commander approves as the text, and pinning it here means no environment,
     # alias or typo can point an approved signed URL — a replayable capability —
-    # at a host nobody approved.
+    # at a host nobody approved. It carries the port when there is one, so
+    # `technocore.chat` does not authorise `technocore.chat:8443`.
     want = {"kind": kind, "target": target, "did": did, "sha256": body_sha256(body),
             "host": host}
     for field, expected in want.items():
@@ -925,7 +972,7 @@ def _proof_preflight() -> str | None:
 def production_fetch(result: dict, args, raw_body: str) -> int:
     """The only path by which `--fetch` reaches a non-loopback host."""
     base = args.base
-    host = urllib.parse.urlsplit(base).hostname or base
+    host = _destination(base)
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     entry = {
         "ts": stamp, "host": host, "kind": _write_kind(result), "target": _write_target(result),
@@ -950,6 +997,9 @@ def production_fetch(result: dict, args, raw_body: str) -> int:
         return refused(problem)
     if not getattr(args, "production", False):
         return refused(f"{host} is not loopback and --production was not given")
+    cleartext = _cleartext_refusal(base)
+    if cleartext:
+        return refused(cleartext)
     approval_path = getattr(args, "approval", None)
     if not approval_path:
         return refused("--approval <file> is required for a production write")
@@ -1102,7 +1152,11 @@ def cmd_approval(args) -> None:
         did = did_from_pubkey(PUBKEY(load_seed()))
     if not is_did_like(did):
         raise SystemExit(f"not a valid did:key: {did!r}")
-    host = getattr(args, "host", None) or urllib.parse.urlsplit(DEFAULT_BASE).hostname
+    # The destination this approval will be checked against: `--host` if given,
+    # otherwise the one `--base` names — so an approval prepared for a rehearsal
+    # server matches that server, and the phone's default stays technocore.chat.
+    host = getattr(args, "host", None) or _destination(getattr(args, "base", None)
+                                                       or DEFAULT_BASE)
     doc = {
         "kind": args.kind, "target": args.target, "did": did, "sha256": body_sha256(clean),
         "host": host, "body_swept": clean, "approved_by": "<name of the approver>",
@@ -1348,7 +1402,8 @@ def main() -> None:
     ap.add_argument("body", help="the exact body that will be sent")
     ap.add_argument("--kind", choices=("say", "set", "note-unsigned"), default="say")
     ap.add_argument("--did", help="signer DID (default: identity/public/did.txt)")
-    ap.add_argument("--host", help=f"host the write is addressed to (default "
+    ap.add_argument("--host", help="destination the write is addressed to, host or host:port "
+                                   "(default: the one --base names, else "
                                    f"{urllib.parse.urlsplit(DEFAULT_BASE).hostname})")
 
     args = p.parse_args()

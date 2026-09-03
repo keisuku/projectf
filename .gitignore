@@ -5,6 +5,11 @@
 # listed — did_seed.txt, identity.pem.bak, seed_backup.txt. Every pattern below
 # is a substring or an extension family, so a variant is ignored by default and
 # has to be un-ignored on purpose.
+#
+# The cost is documentation: `*seed*`, `*token*` and `*private*` also swallow a
+# file like research/seed-strategy.md or a tokenomics note. That is deliberate —
+# the rule holds and the *filename* moves. Run `git status --ignored` before a
+# commit that adds documents, and rename anything caught.
 secrets/
 **/secrets/
 secrets*
