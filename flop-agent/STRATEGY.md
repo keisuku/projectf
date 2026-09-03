@@ -1,4 +1,4 @@
-# STRATEGY — updated 2026-08-27
+# STRATEGY — updated 2026-08-30
 
 ## Pivot 2026-08-28: the key is the road, the repo is a detour
 
@@ -16,6 +16,34 @@ The most scarce asset identified so far is an **owned `d-` room**
 key possession, after which only the owner's key can write to it. That is an
 unforgeable activity log that cannot be bought later. Nothing else on this
 service offers it.
+
+## Sharpened 2026-08-30 (Tier 2): the owned room is not the *best* asset, it is the *only* one
+
+Reading `app.py _note_write_gate` in full settled a question session 1 left open.
+Signed note writes exist for exactly two namespaces, `room-owners` and
+`room-allow`; every other namespace is world-writable **by design** and refuses
+the signed lane with a 400. Upstream says so in the docstring: *"Not a general
+signed-kv system: a note is world-writable by design and stays that way."*
+
+So the DID note — the thing session 1 treated as the identity record — is
+last-write-wins and anyone can overwrite it. It is a pointer peers trust because
+the signed messages it points at verify. It is not itself evidence, and no amount
+of care makes it so.
+
+Meanwhile 0.10.0 added the two pieces that were missing from the other side:
+a signed record now **keeps its signature** (#66/#93), and `GET /r/<room>/export`
+streams the retained room **byte-exact** (#505), so a signed record re-verifies
+from the exported line alone.
+
+Put together: **an owned `d-` room is the only surface on this service that is
+owner-only, durable, attributable, and verifiable by a third party with no server
+involved.** It is claimable once, at creation, before anyone else, and never
+again. Every hour it is unclaimed is the only irreversible cost being paid right
+now — which is why the name decision outranks everything else on the board.
+
+Corollary for the record-keeping: the DID note's job shrinks to *pointing* — at
+the room, and at a mailbox. Keeping it alive still matters (7-day reaper), but it
+carries no weight it cannot bear.
 
 ## Current route ranking
 
@@ -44,6 +72,14 @@ service offers it.
 | **Risk** | low | low | low-med (SNS) | **high** |
 
 ## Measured correction — 2026-08-27: rooms vs notes
+### (superseded in part on 2026-08-30 — see the "owned room" section above)
+
+The measurement below is unchanged and still right about `lobby`. What it got
+wrong is the conclusion "the durable surface is notes, not rooms": a note is
+world-writable and cannot be locked, so it is durable but not *attributable*. An
+owned `d-` room is both. Read this section as "a busy room is not history", not
+as "rooms are not the surface".
+
 
 `lobby` runs at **~35 messages/second**, which puts its ring retention at roughly
 **15–30 minutes** (`research/official/2026-08-27-lobby-throughput.md`). A message
@@ -103,8 +139,77 @@ dropped if the maintainer prefers another shape. Restraint is not free here; it
 costs the implementation. Politeness is not the currency — being first with
 something correct is.
 
+## Confirmed 2026-08-30 (Tier 2): the volume rule is now enforced by the server
+
+0.10.0 refuses cross-sender duplicate room writes with a 422 (`#348`): a per-room
+ring keyed on the normalised text with **no sender in the key**, because one room
+was taking ~90% of all traffic and 71% of what landed in it was the same handful
+of sentences from thousands of distinct DIDs. The farm is now answered by the
+service itself. Nothing about our plan changes — we were never going to do it —
+but "message volume is not the road" has stopped being our inference and become
+the server's behaviour.
+
+Note it is **rooms only**. The DID note keepalive is a note write and is
+unaffected.
+
 Unchanged: still no volume, still no duplicate PRs, still verify before filing.
 Racing a PR that already exists and is correct is not speed, it is noise.
+
+## What goes in `d-bitflop` — decided 2026-08-30
+
+The room proves exactly one thing: **at this time, this key wrote this, and
+nobody else could have.** It does not prove the activity described. "I
+contributed to #433", written in a room only we can write to, establishes that
+we wrote that sentence — self-attestation, which is worth nothing on its own.
+
+So candidate content sorts by *does its value survive being self-attested?*
+
+**1. Highest — content where the timestamp is itself the evidence.** Things that
+cannot be made later: a **hash commitment** (post `sha256:…` of a finding, publish
+the document afterwards, and anyone can then verify we held it on that date), a
+prediction, a statement of intent before the outcome is known. This is the only
+category where the room is *primary evidence* rather than a diary, and it is the
+one thing no other surface available to us can do — not GitHub, not X. One line
+each. Note it only works for material that is **not yet public**; everything in
+this repo is already pushed, so commitments start with the next unpublished
+piece of work.
+
+**2. Medium — pointers to records a third party already timestamps.** A GitHub
+issue or PR number is checkable by anyone against GitHub's own record, so the
+room needs the identifier, not the claim. What this adds is **linkage**: this DID
+is this GitHub account. Session 1's rule against putting the DID in an upstream
+issue still holds and does not conflict — that was about not carrying an
+airdrop-shaped foreign object into *someone else's* space. A GitHub URL in our
+own room costs nobody anything. Nor is it a Sybil pattern: Sybil is one party
+running many fake identities, not one party linking two real ones.
+
+**3. Low as evidence, high as utility — the Japanese-language work.** Writing
+summaries and diffs of official sources into the room proves little about us,
+but it is the only thing that makes the room *worth reading*, which is the only
+way an agent's room matters to anyone else. It also has a useful property: **it
+is not an SNS post**, so it builds the Creator asset without touching the
+approval gate that route is otherwise blocked behind.
+
+**4. Negative — bare activity claims with no external anchor.** "Initialization
+complete", "good work today". This is the shape `/rooms` publishes
+`zero_response_share` and `nick_diversity` to expose, the room is public and
+`/export`able, and whoever evaluates will read it. The opening three records are
+this shape; records cannot be edited, so the correction is everything after them.
+
+**Operating rule: the 7-day keepalive write IS the log entry.** A write is
+forced every 7 days or the room and its ownership note go together. Making that
+forced write substantive turns an obligation into the asset. Each one carries
+what moved upstream that week (checkable), any GitHub identifier (checkable), and
+a hash commitment for anything unpublished.
+
+Capacity is not a constraint: measured at ~400 bytes per signed record, the ring
+retains ~13,000 records normally and ~2,600 in the worst case the byte budget
+allows. At one or two entries a week that is decades. That is a reason not to
+pad, not a reason to fill it.
+
+Honest about the payoff: **no official source ties any of this to allocation
+(Tier 10).** What holds is the same thing that has held since session 1 — a
+single key with continuous, attributable history cannot be bought later.
 
 ## What we deliberately are NOT doing
 
@@ -120,6 +225,28 @@ Racing a PR that already exists and is correct is not speed, it is noise.
   inside the exact cluster a Sybil filter would train on. See
   `research/official/2026-08-28-x-posting-and-faucet-gate.md`.
 - No third-party "airdrop tool" — official implementation only.
+
+## Reported 2026-08-30 (Tier 8-9, unconfirmed): a ~14-month runway
+
+Community reporting puts the airdrop at Q4 2026 and mainnet genesis at Q1 2027.
+Unconfirmed, and not a rewrite trigger. But if it is even approximately right,
+the runway is about fourteen months, and that reframes the risk:
+
+**The way this identity is lost is attrition, not competition.** Fourteen months
+of a 7-day keepalive is sixty-plus cycles, and one missed fortnight in month nine
+deletes the DID note and, separately, the room and its ownership. Nobody
+out-competes us into that; we simply forget.
+
+So the highest-value unglamorous task on the board is now **automating the
+DID-note keepalive** — it needs no key, so it belongs on the PC as cron or
+launchd. The room write needs the seed and cannot be automated away from the
+phone; a repeating calendar entry is the control there.
+
+The corollary is that **patience is free**. Fourteen months is long enough that
+compounding quality beats haste, so there is still no reason to rush a
+contribution, buy hardware, or post anything. And the asymmetry is safe either
+way: if the timeline is long we hold position, if it is short our setup is
+already done.
 
 ## Conditions that force a strategy rewrite
 

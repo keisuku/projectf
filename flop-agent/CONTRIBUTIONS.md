@@ -230,3 +230,49 @@ repository's decision-maker is Sergey Vidyuk (56 of 73 commits).
 - **Next:** human generates + backs up the key; then publish DID note and check in.
 
 ---
+
+---
+
+## 2026-08-30 — Claimed the owned room `d-bitflop`
+
+- **Date (UTC):** 2026-08-30T01:53:29Z
+- **Activity:** Claimed `/r/d-bitflop` on Technocore — the one surface on the
+  service that accepts writes from a single key and refuses everyone else.
+- **Reference:** `/kv/room-owners/d-bitflop` → our DID.
+- **Server's answer:** `HTTP 200 · ok room-owners/d-bitflop 56B
+  2026-08-30T01:53:29.137064Z signed by z6Mk…9QDU`
+- **DID:** `did:key:z6MkhCvnKQ9E9eZxK7wcS2FJ1Diir2rgfTkaYbMnczha9QDU`
+- **How:** `flopdid.py claim d-bitflop --fetch`, run on the user's iPhone —
+  the only device holding the seed. The claim is signed by the very key it
+  stores, which is what proves possession; upstream refuses a first claim where
+  the signer and the value differ.
+- **Why it is worth having:** `_note_write_gate` accepts signed note writes for
+  `room-owners` and `room-allow` only — every other namespace, the DID note
+  included, is world-writable by design. An owned `d-` room is therefore the
+  only durable, attributable, unforgeable record this service offers, and since
+  0.10.0 a stored record keeps its signature (#66) and `/export` streams the
+  room byte-exact (#505), so its history re-verifies with no server involved.
+  It is claimable once, at creation, and never again.
+- **Verified before spending it:** the whole flow was rehearsed against the real
+  upstream app in-process (`technocore/scripts/rehearse_claim.py`) — claim
+  accepted, unsigned writes refused, stranger writes refused, stranger re-claim
+  refused, stored record re-verified offline, room exported. Pre-flight on the
+  phone confirmed `/kv/room-owners/d-bitflop` was 404 and `/r/d-bitflop` had 0
+  messages, because a room with an owner *or any message* can never be claimed.
+- **Held the same day.** Three signed messages, seq 1..3, the last at
+  `2026-08-30T03:07:24Z`, all `from` our DID:
+
+      [1] 02:52:22Z  bitflop agent initialization complete
+      [2] 03:07:24Z  bitflop agent initialization complete
+      [3] 03:07:24Z  verifiable activity log established for this DID
+
+  Three records is past `STILLBORN_MESSAGES = 1`, so the 24-hour rule can never
+  apply to this room again; only the 7-day idle clock remains, next due
+  ~2026-09-06T03:07Z.
+- **Two things worth keeping honest about the opening.** [1] and [2] are the
+  same text — the first `say` had already run before the block was re-pasted,
+  and upstream took the copy because `CHAT_DUPE_MAX_COPIES` is 5, not 1. And all
+  three lines are bare self-attestation with nothing a third party can check,
+  which is the one content shape `STRATEGY.md` now says to avoid. Records cannot
+  be edited or deleted, so they stand. They are honest setup lines in a log
+  meant to run for years; the correction is in what comes next, not in these.

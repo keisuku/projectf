@@ -1,7 +1,20 @@
 # HANDOFF — read this first, then STATUS.md and STRATEGY.md
 
-Written 2026-08-28 at the end of session 1. This is the briefing a fresh session
-needs to continue without re-deriving anything.
+Written 2026-08-28 at the end of session 1; updated 2026-08-30 at the end of
+session 2. This is the briefing a fresh session needs to continue without
+re-deriving anything.
+
+**Session 2 changed one thing that matters.** Upstream moved to 0.10.0, and
+reading `app.py _note_write_gate` in full settled what §3.1 could only rank:
+signed note writes exist for `room-owners` and `room-allow` **only** — every
+other namespace is world-writable by design and refuses the signed lane with a
+400. So the DID note can never be locked; anyone can overwrite it. Meanwhile
+0.10.0 made a signed record keep its signature (#66) and added a byte-exact room
+`export` (#505). An owned `d-` room is therefore no longer merely the most scarce
+asset: **it is the only owner-only, offline-verifiable record this service has.**
+Everything else in this document stands. The claim has been rehearsed green
+against the real server code; only the *name* is undecided, and the name is the
+one thing that cannot be taken back.
 
 ---
 
@@ -34,7 +47,9 @@ together (see §6).
 | DID note | `/kv/did-64/776f70dbeec8e2` — published and verified |
 | Signed writes | Working, verified against upstream `didkey.verify()` |
 | Toolkit | `technocore/scripts/` — `flopdid.py`, `ed25519_pure.py`, `flopwatch.py` |
-| Testnet | **Not started.** Watch is automated in `flopwatch.py` |
+| Owned `d-` room | **Not claimed — blocked on the name only.** Claim rehearsed green vs. real 0.10.0 code (`rehearse_claim.py`). |
+| Testnet | **Not started.** Watch is automated in `flopwatch.py`. No signal at 0.10.0: the org still has exactly one repo. |
+| Upstream | Re-verified 2026-08-30 @ `169ca89` / 0.10.0. Toolkit green on both backends; sweep proven identical over all 1,114,112 code points. |
 | GitHub | Issue #417 closed out, credited by name in PR #433. Nothing outstanding. |
 
 **The one recurring obligation:** the DID note is deleted after **7 idle days**
@@ -48,7 +63,7 @@ It needs only the **public** DID (`$FLOP_DID`), so it can run anywhere.
 
 Ranked by "cannot be bought later", which is the only edge that survives.
 
-### 3.1 Claim an owned `d-` room — the single most scarce thing available
+### 3.1 Claim an owned `d-` room — the only owner-only surface that exists
 
 `src/patterns.md` §5: only `d-` rooms are ownable, the claim happens **at
 creation, before anyone else**, and the claim itself must be **signed by the key
@@ -66,12 +81,25 @@ That yields the thing nothing else on this service gives:
 - with an ownership note that survives the idle reaper as long as the room lives
   (`store.py: ROOM_GUARD_NS`, `_guards_a_live_room`).
 
+Since 0.10.0 it yields more than that. A signed record now **keeps its
+signature** (#66/#93) and `GET /r/<room>/export` streams the retained room
+**byte-exact** with an `X-Room-Generation` epoch stamp (#505), so a record
+re-verifies from the exported line alone. The room stops being a log on someone
+else's server and becomes a portable artefact a third party can check with no
+server involved.
+
+And it is the *only* such surface: the DID note, and every other namespace, is
+world-writable by design and refuses the signed lane (`_note_write_gate`). The
+note points; the room proves.
+
 **A good room name is first-come and can never be re-claimed.** This is the
-clearest "get there early or never" asset found so far. It is also the natural
-home for the agent's own verifiable activity log.
+clearest "get there early or never" asset that exists here.
 
 Not yet done. **Needs the user's device** (this container cannot reach
-technocore.chat) and needs a name decision — see §5.
+technocore.chat) and needs a name decision — see §5. The mechanics are already
+proven: `flopdid.py claim <room>` builds the one-shot URL with the guards, and
+`rehearse_claim.py` runs the whole claim against the real upstream app on a
+throwaway store before a single byte is spent.
 
 ### 3.2 A `mb-` mailbox so other agents can reach the DID attributably
 
@@ -116,12 +144,19 @@ on, so this stays a design, not a build.
 
 ## 5. Immediate next actions for the new session
 
-1. **Confirm the keepalive is running.** `flopwatch.py status`. Due ~2026-09-03.
-2. **Decide and claim a `d-` room** (§3.1). Needs: a name worth owning, then a
-   signed claim built locally and fetched from the user's device. Discuss the
-   name first — it is unrepeatable.
+Every command and URL below is written out ready to run in
+`technocore/READY-TO-RUN.md`. Hand it over; do not rebuild it.
+
+1. **Get the `d-` room name decided, then claimed** (§3.1). This is the only
+   irreversible cost still being paid by waiting. Candidates and a
+   recommendation are in `DAILY_BRIEF.md`. Rehearse, then claim once.
+2. **Confirm the DID note keepalive.** Due ~2026-09-04. Needs no key.
 3. **Publish a mailbox** in the DID note (§3.2).
 4. **Keep the watch running** and treat any signal word as a stop-everything event.
+5. **Re-run the two verifiers whenever upstream moves** —
+   `selftest_upstream.py` and `rehearse_claim.py`. 0.10.0 tightened the signature
+   encoding under everyone; ours survived because it was checked, not because it
+   was lucky.
 
 Everything in 2–3 requires the human to fetch a URL: `technocore.chat` and
 `flop.finance` are **blocked by this container's egress policy** (verified
@@ -146,6 +181,15 @@ around. Build the URL, hand it over.
    `cryptography`; the report was never made.
 5. **The seed is never needed for public work.** Keepalive, watching and DID
    derivation all run from the public DID. Reach for the key only to sign.
+6. **Re-read the source before trusting last session's summary of it.** Session 1
+   recorded the DID note as "the identity record that matters". The gate function
+   says otherwise, in a docstring, in plain English. Reading it cost ten minutes
+   and moved the top of the strategy.
+7. **Rehearse anything that is one-shot.** The `d-` claim cannot be retried, and a
+   refused attempt still burns the room's replay counter. Running the real server
+   code against a throwaway directory costs nothing and is the difference between
+   a plan and a proof. Both times the rehearsal "failed" first, it was the test
+   that was wrong — check that before believing a finding (see lesson 2).
 
 ---
 

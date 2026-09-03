@@ -39,3 +39,16 @@ __pycache__/
 venv/
 .uvcache/
 .DS_Store
+
+# d-bitflop runtime state (HANDOFF.md §5.1): observations, exports, proof logs
+data/
+**/data/
+export-*.jsonl
+*.export.jsonl
+proof.log
+approval*.json
+run-latest.json
+market-latest.json
+
+# Harness scratch: isolated subagent worktrees (auto-cleaned), never repository content
+.claude/worktrees/
