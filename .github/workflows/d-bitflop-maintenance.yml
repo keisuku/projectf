@@ -1,0 +1,37 @@
+name: d-bitflop autonomous maintenance
+
+on:
+  schedule:
+    # 08:45 JST. Scheduled Actions may start late; the signer writes at day 5,
+    # leaving roughly two full days before Technocore's 7-day idle reaper.
+    - cron: "45 23 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: d-bitflop-maintenance
+  cancel-in-progress: false
+
+jobs:
+  maintain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Check out the fixed policy and signer
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Maintain d-bitflop
+        env:
+          FLOP_DID_SEED: ${{ secrets.FLOP_DID_SEED }}
+          FLOP_AGENT_HOME: ${{ runner.temp }}/flop-agent
+          FLOP_FORCE_PURE: "1"
+        working-directory: flop-agent/technocore/scripts
+        run: |
+          set -eu
+          if [ -z "${FLOP_DID_SEED:-}" ]; then
+            echo "FLOP_DID_SEED repository secret is not configured" >&2
+            exit 1
+          fi
+          python3 autonomous_maintain.py
