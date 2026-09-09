@@ -108,6 +108,29 @@ def test_due_signs_once_and_verifies_exact_record(modules):
     assert "verified the fixed owner DID" in server.messages[-1]["text"]
 
 
+def test_due_retries_a_stale_success_readback(modules):
+    _, auto, did = modules
+    now = 2_000_000_000
+    server = Server(auto, did, now, age_days=5.1)
+    stale_room = json.dumps(server.room()).encode()
+    verification_urls = []
+    sleeps = []
+
+    def cached_get(url, timeout=30):
+        if f"/r/{auto.ROOM}?" in url and "verify=" in url:
+            verification_urls.append(url)
+            if len(verification_urls) <= 2:
+                return 200, {}, stale_room
+        return server.get(url, timeout)
+
+    out = auto.maintain(now=now, getter=cached_get, sleeper=sleeps.append)
+    assert out["signed_write"] == "written-and-verified"
+    assert server.writes == ["note", "signed"]
+    assert len(verification_urls) == 3
+    assert all("verify=" in url for url in verification_urls)
+    assert sleeps == [1, 2]
+
+
 @pytest.mark.parametrize("failure", ["owner", "count", "signature"])
 def test_invariant_failure_refuses_before_any_write(modules, failure):
     _, auto, did = modules
