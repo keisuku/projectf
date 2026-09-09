@@ -142,18 +142,33 @@ def _maintenance_body(now: float, room: dict, latest: dict) -> str:
     )
 
 
-def _record_landed(result: dict, getter: Getter, sleeper: Sleeper) -> bool:
-    status, _, body = _fetch(f"/r/{ROOM}?format=json&limit=50", getter, sleeper)
-    if status != 200:
-        return False
-    room = _json_room(body)
-    return any(
-        msg.get("from") == EXPECTED_DID
-        and msg.get("nonce") == result["nonce"]
-        and msg.get("text") == result["text"]
-        and msg.get("sig") == result["sig"]
-        for msg in room["messages"]
-    )
+def _record_landed(
+    result: dict,
+    getter: Getter,
+    sleeper: Sleeper,
+    attempts: int = 3,
+) -> bool:
+    # Plain room reads are edge-cached. A successful append can therefore be
+    # followed by a 200 carrying the pre-write room for a few seconds. Give
+    # each exact verification a nonce-specific cache key and retry a stale
+    # success before declaring the signed write indeterminate.
+    verify = urllib.parse.quote(str(result["nonce"]), safe="")
+    path = f"/r/{ROOM}?format=json&limit=50&verify={verify}"
+    for attempt in range(attempts):
+        status, _, body = _fetch(path, getter, sleeper)
+        if status == 200:
+            room = _json_room(body)
+            if any(
+                msg.get("from") == EXPECTED_DID
+                and msg.get("nonce") == result["nonce"]
+                and msg.get("text") == result["text"]
+                and msg.get("sig") == result["sig"]
+                for msg in room["messages"]
+            ):
+                return True
+        if attempt + 1 < attempts:
+            sleeper(2**attempt)
+    return False
 
 
 def maintain(
