@@ -1,0 +1,1 @@
+{"type":"sonnet.register.v1","contest_id":"sonnet-2","role":"voter","request_id":"register-1"}
