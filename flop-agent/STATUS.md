@@ -1,4 +1,4 @@
-# STATUS — 2026-09-03 (session 4: the gate is merged, audited twice, and the write LANDED at seq 4)
+# STATUS — 2026-09-19 (seq 7 written by hand; the autonomous path stopped)
 
 **Read the repository-root `HANDOFF.md` first.** Since 2026-09-03 (JST) this project runs
 under that handoff. Command structure as of this session: **this Claude Code session is the
@@ -11,22 +11,24 @@ three-factor gate in `flopdid.py` (`technocore/README.md` § Production write ga
 
 | Object | Last write (verified) | Reaped after | Due | Needs |
 |---|---|---|---|---|
-| Room `/r/d-bitflop` + its ownership note | **2026-09-03T10:09:33Z** (seq 4) — **written through the gate, HTTP 200, server-assigned values** | 7 idle days | **2026-09-10T10:09:33Z** (09/10 19:09 JST) | the seed → the phone, through the gate |
+| Room `/r/d-bitflop` + its ownership note | **2026-09-19T03:16:24Z** (seq 7) — written through the gate, HTTP 200 | 7 idle days | **2026-09-26T03:16Z** (09/26 12:16 JST) | the seed → the phone, through the gate |
 | DID note `/kv/did-64/776f70dbeec8e2` | 2026-08-28 (publish; any later refresh is **unverified**) | 7 idle days | **~2026-09-04** | public DID only |
 
 The container still cannot read either object (`technocore.chat` is egress-blocked,
-re-verified **2026-09-03T03:52Z** at the proxy: `connect_rejected`, gateway 403 to
+re-verified **2026-09-19T03:10Z** at the proxy: `connect_rejected`, gateway 403 to
 CONNECT for `technocore.chat:443`). The **room's** value is no longer a reported one —
-the operator read `/r/d-bitflop?format=json` from the phone at 2026-09-03T09:00Z and the
+the operator read `/r/d-bitflop?format=json` from the phone at 2026-09-19T03:05Z and the
 raw JSON is what the table above carries. The **DID note's** value is still unverified;
 re-read it from a device that reaches the host, and treat the earlier deadline as the one
 that matters.
 
-Derived from the write that landed: the 5-day mark is **2026-09-08T10:09:33Z** (09/08
-19:09 JST) and the reap is **2026-09-10T10:09:33Z**. The room is no longer the pressing
-deadline — **the DID note is**, due ~2026-09-04, needing no key. It is the cheapest
-obligation in the project and the one that gets missed while attention is on the
-expensive one.
+Derived from seq 7: the 5-day mark is **2026-09-24T03:16Z** (09/24 12:16 JST) and the
+reap is **2026-09-26T03:16Z** (09/26 12:16 JST). Seven clear days.
+
+**The open item is not a deadline.** The autonomous path wrote seq 5 and seq 6 within
+hours and minutes of their marks, then did not write seq 7 at all. It does not run in
+this repository, so nothing here can be inspected to find out why. Until that is settled,
+every cycle is manual and depends on someone remembering.
 
 ## Participation state
 
@@ -35,22 +37,22 @@ expensive one.
 | Permanent DID | **CREATED** `did:key:z6Mk…9QDU` | Generated on the user's iPhone. Validated by upstream `didkey.public_key()`. |
 | Seed backup | **DONE** (user-confirmed) | The one irreversible step, closed. |
 | DID note published | **YES** `/kv/did-64/776f70dbeec8e2` | Durable (notes have no ring). Verified by fetch. |
-| Signed check-in | **DONE 2026-09-03** | seq 4, through the production gate, body approved by the commander and hash-checked on the device. |
+| Signed check-in | **DONE; latest seq 7, 2026-09-19** | Every one through the production gate, body hash-checked on the device, canonical bytes decoded from the review screen and compared to the approved body before confirming. |
 | Signing toolkit | **DONE, and proven on-device** | The phone has no `cryptography`; the pure-Python fallback is what actually runs there. |
 | Testnet | **NOT STARTED** | No official start date. |
 | Miner / validator | Deferred | No specs published. |
 | GitHub contribution | **#417 landed in #433, credited by name** | Finding, verification and test design all shipped. Nothing outstanding. |
-| DID note keepalive | **DUE ~2026-09-04** | Reaped after 7 idle days from the 2026-08-28 publish. `flopwatch.py keepalive --write`, or the ready URL in `technocore/READY-TO-RUN.md` §1. Needs no key. |
+| DID note keepalive | **REFRESHED 2026-09-08T00:39Z; next due ~2026-09-15 — UNVERIFIED since** | Reaped after 7 idle days from the 2026-08-28 publish. `flopwatch.py keepalive --write`, or the ready URL in `technocore/READY-TO-RUN.md` §1. Needs no key. |
 | Owned `d-` room | **CLAIMED `d-bitflop`** 2026-08-30T01:53:29Z | `signed by z6Mk…9QDU`. `/r/d-bitflop` now takes signed writes from our key only. |
-| Room contents | **HELD — 4 messages, seq 1..4, generation 0** (seq 4 written 2026-09-03T10:09:33Z) | Past `STILLBORN_MESSAGES = 1`, so the 24-hour rule can never apply again; only the 7-day idle clock remains. **Seq 1-3 carry no `sig`**, so none of them is offline re-verifiable — upstream stores `rec["sig"]` only when the caller supplies it, and reads the record through to the view unchanged. The owned room's whole point (`HANDOFF.md` §3.1) is a record that verifies from the exported line alone. **Seq 4 was written by a client that supplies the signature to a server that retains it — confirm on the next read that it carries a `sig`, since that is the property the room exists for.** |
-| Room keepalive | **DONE 2026-09-03; next due ~2026-09-10T10:09Z** | Then one signed write every 7 days, or the room *and* the ownership note go together. Needs the seed. |
+| Room contents | **HELD — 7 messages, seq 1..7, generation 0** (seq 7 written 2026-09-19T03:16:24Z) | Past `STILLBORN_MESSAGES = 1`, so the 24-hour rule can never apply again; only the 7-day idle clock remains. **Seq 1-3 carry no `sig`**, so none of them is offline re-verifiable — upstream stores `rec["sig"]` only when the caller supplies it, and reads the record through to the view unchanged. The owned room's whole point (`HANDOFF.md` §3.1) is a record that verifies from the exported line alone. **Seq 4 was written by a client that supplies the signature to a server that retains it — confirm on the next read that it carries a `sig`, since that is the property the room exists for.** |
+| Room keepalive | **DONE 2026-09-19 (manual); next due ~2026-09-26T03:16Z** | Then one signed write every 7 days, or the room *and* the ownership note go together. Needs the seed. |
 | Mailbox (`mb-p-…`) | NOT PUBLISHED | After the room claim. `READY-TO-RUN.md` §3. |
-| Toolkit vs upstream | **RE-VERIFIED 2026-09-03; upstream now `674c2aa`** | Moved 4 commits past the `01c49fb` pin during this session (#675, #683, #684, #687), all edge/cache work, version still 0.11.4. **`src/didkey.py`, `src/store.py` and `src/config.py` are byte-identical to the pin**, so `SIG_PATTERN`, `IDLE_SECONDS = 7*86400` and `STILLBORN_MESSAGES = 1` are unchanged, and #687's duplicate key (`limit.py normalize_text`) folds case and whitespace but **not digits** — a weekly maintenance body differing only in numbers is not a duplicate. `selftest_upstream.py` and `rehearse_claim.py` green. |
+| Toolkit vs upstream | **RE-VERIFIED 2026-09-19; upstream `e4c4f73` v0.14.0** | 27 commits past `674c2aa`/v0.11.4. `didkey.py` changed only to prepend the leading zero bytes a base58btc key can carry (a DID whose raw key starts `0x00` used to decode short and be rejected); `SIG_PATTERN`, `IDLE_SECONDS = 7*86400` and `STILLBORN_MESSAGES = 1` unchanged. `limit.py normalize_text` still folds case and whitespace but **not digits**, so a maintenance body differing only in numbers is not a duplicate. `selftest_upstream.py` and `rehearse_claim.py d-bitflop` green. |
 | Upstream `#417` (ours) | **still open; `#433` is not on `main`** | `scripts/stdlib_ed25519.py` absent from `origin/main` (only `bench/ed25519_backends.py`). A third party reported on the thread 2026-09-03 that #433 is CONFLICTING with no CI and no review. Nothing owed by us: `CONTRIBUTIONS.md` closed #417 out on 08-28. |
 | Production write gate | **MERGED 2026-09-03 (`69f130a`), audited twice** | PR #1 then PR #5. `--fetch` to a non-loopback host needs `--production` + a one-time `--approval` (body SHA-256, `host`, required `expires`) + a TTY confirmation, checked **before** the review screen is printed; `$TECHNOCORE_BASE` is ignored under `--production`; the destination pin carries the port; cleartext http to a public host is refused; proof.log + `/export` snapshot per write; redirects and proxies refused. **87 tests.** |
 | Local E2E | **RE-REPRODUCED 2026-09-03** | Real upstream server (uvicorn, v0.11.4) on a non-loopback address: refusals (no flag / no approval / no TTY / wrong confirmation / wrong host / wrong port / cleartext) and acceptance; approval consumed as `*.used-<utc>-<nonce>`; export re-verified offline with upstream `didkey.verify()`. |
 | `flop-labs/tclk` | **MOVED 2026-09-03: `81a8346` → `1459b78`** | Four validation fixes, all 09-03: PaperRail decode (#29), non-finite/negative clock (#14), malformed deadlines (#34), unknown lock kind verifies nothing (#15). Still v0.1.0, **still no value-bearing rail**, offline auditor (PR #25) **still not on `main`**. |
-| `flop-labs` org | **still exactly 2 repositories** | technocore-chat, tclk. **No testnet client repo** — the signal `flopwatch.py` is armed for has not fired. |
+| `flop-labs` org | **5 repositories (was 2)** | technocore-chat, tclk, **`yellowpaper`** (2026-09-04, *normative specification for a verified-inference settlement layer*), **`technocore-sonnet-challenge`** (2026-09-10), `.github`. The yellowpaper is the kind of signal `flopwatch.py` was armed for and **has not been read in depth** — that is outstanding work. |
 | Codex / ChatGPT Phase 1 code (`d-bitflop run-once`, RECON.md, 9 tests) | **NOT IN THIS REPOSITORY, and no longer on the critical path** | Re-checked 2026-09-03: no branch, no Issue attachment, no `pyproject.toml`, no `uv.lock`, no `d-bitflop` console script anywhere. `uv run d-bitflop run-once` cannot be executed here. See the commander's decision below. |
 
 ## Why the DID was not generated in this container

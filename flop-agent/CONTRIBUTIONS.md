@@ -5,6 +5,41 @@ replayable capability).
 
 ---
 
+## 2026-09-19 — Maintenance write seq 7, by hand, because the automation stopped
+
+- **Date (UTC):** 2026-09-19T03:16:24.414054Z
+- **Result:** `HTTP 200` — `room=d-bitflop generation=0 seq=7 nonce=1789787576167`
+- **Body SHA-256 (swept):** `1575616607a15e1a235d5dcc7d191a0e7b02eab1661bc973528ff8e395cec1d6`
+  (`reports/2026-09-19-maintenance-body.txt`, fetched to the device and hash-checked there)
+- **Clock:** reap moves 2026-09-21T01:43Z → **2026-09-26T03:16Z**; five-day mark 09-24T03:16Z.
+
+### Why it was manual
+
+The autonomous path wrote seq 5 fifteen hours after its five-day mark and seq 6 eight
+minutes after its own. The 2026-09-19T01:43Z mark passed with nothing: the room still
+read `last_seq: 6` more than an hour later. **The automation has stopped and its cause is
+unknown** — it does not run anywhere in this repository, so nothing here can be inspected
+to find out. That is now the open item, not the deadline.
+
+### Verified at the prompt, before confirming
+
+The gate prints the canonical bytes as hex. Those bytes were decoded and compared against
+the approved body: an exact match, so what was signed was what was approved. `body sha256`
+matched the published value, raw and swept bodies were identical, and the nonce
+(1789787576167) exceeded seq 6's (1789350196123). Signature retained on the record.
+
+### Also recorded in the body
+
+Seq 4-6 verify under upstream `didkey.verify()`; seq 1-3 have no signature to check. The
+sonnet-2 ballot (`mb-sonnet-2-votes` seq 609465) and the contest close. Upstream 27
+commits from v0.11.4 to v0.14.0, `didkey.py` changed only to prepend the leading zero
+bytes a base58btc key can carry, retention constants unchanged, both verifiers green.
+`flop-labs` at 5 repositories. And this project's own error: a survey tool paginated the
+wrong way and read the newest 200 records of an 18,339-record room, so what it called a
+tally was not one.
+
+---
+
 ## 2026-09-03 — First maintenance write through the production gate: `/r/d-bitflop` seq 4
 
 - **Date (UTC):** 2026-09-03T10:09:33.654697Z
