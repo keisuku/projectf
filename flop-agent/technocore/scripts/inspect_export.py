@@ -21,9 +21,15 @@ a claim by its author — only `from` says who actually signed.
 
 Needs no key, no network, and no packages. It only reads the file you name.
 
+With no `--did`, it looks for `identity/public/did.txt` beside the export's own
+directory — the layout the gate already writes, where exports land in
+`<identity home>/logs/`. That keeps the command short enough to type on a phone,
+which is the only device this ever runs on. `--summary` skips the lookup.
+
 Usage:
+    python3 inspect_export.py <export.jsonl>             # uses identity/public/did.txt
     python3 inspect_export.py <export.jsonl> --did did:key:z6Mk...
-    python3 inspect_export.py <export.jsonl>            # summary only
+    python3 inspect_export.py <export.jsonl> --summary   # shape only
 
 Exit codes: 0 the DID was found (or no `--did` was given and the file parsed),
 1 the DID appears nowhere in the export, 2 the file could not be read.
@@ -82,12 +88,27 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("export", help="a saved export-<room>-<utc>-<nonce>.jsonl")
     ap.add_argument("--did", help="print full detail for records mentioning this DID")
+    ap.add_argument("--summary", action="store_true",
+                    help="shape only; do not look up or use a DID")
     args = ap.parse_args()
 
     path = Path(args.export)
     if not path.is_file():
         print(f"no such file: {path}", file=sys.stderr)
         return 2
+
+    # The gate writes exports to <identity home>/logs/, and the DID is published
+    # at <identity home>/identity/public/did.txt. Reading it is what lets the
+    # command stay short; it is public material and never the seed.
+    if not args.did and not args.summary:
+        published = path.resolve().parent.parent / "identity" / "public" / "did.txt"
+        if published.is_file():
+            found = published.read_text(encoding="utf-8", errors="replace").strip()
+            if found.startswith("did:key:"):
+                args.did = found.split()[0]
+                print(f"did (from {published.name}): {args.did}")
+            else:
+                print(f"{published} does not hold a did:key — pass --did", file=sys.stderr)
 
     records: list[dict] = []
     malformed = 0
