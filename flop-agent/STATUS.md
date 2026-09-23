@@ -12,7 +12,25 @@ three-factor gate in `flopdid.py` (`technocore/README.md` § Production write ga
 | Object | Last write (verified) | Reaped after | Due | Needs |
 |---|---|---|---|---|
 | Room `/r/d-bitflop` + its ownership note | **2026-09-19T03:16:24Z** (seq 7) — written through the gate, HTTP 200 | 7 idle days | **2026-09-26T03:16Z** (09/26 12:16 JST) | the seed → the phone, through the gate |
-| DID note `/kv/did-64/776f70dbeec8e2` | 2026-08-28 (publish; any later refresh is **unverified**) | 7 idle days | **~2026-09-04** | public DID only |
+| DID note `/kv/did-64/776f70dbeec8e2` | 2026-08-28 (publish; a 2026-09-08T00:39Z refresh was reported but never verified) | 7 idle days | **~2026-09-15 at the latest → almost certainly ALREADY REAPED** | public DID only |
+
+**Verified in upstream 2026-09-23 — the two notes are not on the same kind of clock.**
+`store.py _reapable()` applies the plain `IDLE_SECONDS` rule to notes as well as rooms, so
+an ordinary note dies 7 days after its last write. But `ROOM_GUARD_NS = (OWNERS_NS,
+ALLOW_NS, NONCE_NS)` is exempted through `_guards_a_live_room()`, with the reason stated in
+the source: a guard note's mtime "tracks when ownership last changed, not when the room was
+last used", so under the plain rule a busy room's owner note would expire during quiet
+*ownership* and take the allow-list and the replay counter with it — "a control whose whole
+job is to outlive an attacker must not expire before the thing it guards." Consequences for
+us, both concrete:
+
+- **`/kv/room-owners/d-bitflop` needs no keepalive of its own.** It lives exactly as long as
+  the room does; once the room is reapable the guards go too. There is **one** clock to
+  defend, not two: **2026-09-26T03:16Z**.
+- **`/kv/did-64/776f70dbeec8e2` is an ordinary note and gets no such protection.** On the
+  reported 09-08 refresh it was due ~09-15; that is eight days past. Treat it as **gone
+  until a read says otherwise**. Losing it costs discoverability, not ownership, and it is
+  repaired by one unsigned GET that needs no key.
 
 The container still cannot read either object (`technocore.chat` is egress-blocked,
 re-verified **2026-09-19T03:10Z** at the proxy: `connect_rejected`, gateway 403 to
@@ -26,9 +44,26 @@ Derived from seq 7: the 5-day mark is **2026-09-24T03:16Z** (09/24 12:16 JST) an
 reap is **2026-09-26T03:16Z** (09/26 12:16 JST). Seven clear days.
 
 **The open item is not a deadline.** The autonomous path wrote seq 5 and seq 6 within
-hours and minutes of their marks, then did not write seq 7 at all. It does not run in
-this repository, so nothing here can be inspected to find out why. Until that is settled,
+hours and minutes of their marks, then did not write seq 7 at all. Until that is settled,
 every cycle is manual and depends on someone remembering.
+
+**Corrected 2026-09-23: the automation *is* in this repository** —
+`technocore/scripts/autonomous_maintain.py` (`4363ac4d…`), added in `ca43cfd` and fixed in
+`8184d91`. An earlier note here said it could not be inspected; that was wrong. What is
+outside the repository is only whatever *schedules* it. Reading it settles what one run does:
+`_verify_seed()` refuses unless the configured seed derives the fixed DID, `_read_public_state()`
+refuses unless `/kv/room-owners/d-bitflop` still equals that DID, the DID note is then
+refreshed **unconditionally** and read back byte-exact, and the signed record is appended
+**only** when the newest owner-signed record is older than `WRITE_AFTER_SECONDS = 5*86400`
+— otherwise the run returns `"signed_write": "not-due"` and stops. It considers only records
+that actually carry a `sig`, so seq 1-3 cannot satisfy the freshness test and seq 7 is what
+the clock runs from. The body is composed by the program from observed values
+(`_maintenance_body`), the signed URL is never logged, and a `200` is not believed on its own
+— `_record_landed()` re-reads with a nonce-specific cache key before the run calls itself done.
+
+That makes the division of labour for this cycle exact: **a run today repairs the DID note and
+correctly declines to write** (the 5-day mark is 09-24T03:16Z), and a second run any time after
+that mark appends the record. Same command both times.
 
 ## Participation state
 
