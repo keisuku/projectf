@@ -11,8 +11,11 @@ three-factor gate in `flopdid.py` (`technocore/README.md` § Production write ga
 
 | Object | Last write (verified) | Reaped after | Due | Needs |
 |---|---|---|---|---|
-| Room `/r/d-bitflop` + its ownership note | **2026-09-19T03:16:24Z** (seq 7) — written through the gate, HTTP 200 | 7 idle days | **2026-09-26T03:16Z** (09/26 12:16 JST) | the seed → the phone, through the gate |
-| DID note `/kv/did-64/776f70dbeec8e2` | **2026-09-23T23:13Z — refreshed AND read back byte-exact** (`"note": "refreshed-and-verified"`) | 7 idle days | **2026-09-30T23:13Z** | public DID only |
+| Room `/r/d-bitflop` + its ownership note | **2026-09-24T05:04:10Z** (seq 8) — written by the automation, exact read-back confirmed | 7 idle days | **2026-10-01T05:04:10Z** (10/01 14:04 JST) | the seed → the phone |
+| DID note `/kv/did-64/776f70dbeec8e2` | **2026-09-24T05:04Z — refreshed AND read back byte-exact** (`"note": "refreshed-and-verified"`) | 7 idle days | **2026-10-01T05:04Z** | public DID only |
+
+Both clocks now fall on **2026-10-01T05:04Z**, because the automation refreshes the note on
+every run and the run that wrote seq 8 did both. One date to defend, not two.
 
 **Verified in upstream 2026-09-23 — the two notes are not on the same kind of clock.**
 `store.py _reapable()` applies the plain `IDLE_SECONDS` rule to notes as well as rooms, so
@@ -78,7 +81,42 @@ Four things are now first-hand rather than inferred: the ownership note still re
 DID (`owner: matched`), the DID note is **alive again and verified byte-exact** — closing an item
 that had been overdue since ~09-15 — the room's clock runs from seq 7 with the reap at
 **2026-09-26T03:16:24Z**, and the 5-day gate declined on its own (`not-due`, 4.831 < 5). Nothing
-was signed. **Run 2 goes any time after 2026-09-24T03:16:24Z, same single command.**
+was signed.
+
+**Run 2 executed 2026-09-24T05:04:10Z and wrote seq 8:**
+
+```json
+{"age_days": 5.075, "body_sha256": "42638756ecdc981f524c9d6cf0aa4319db6523dacfebed93df3e3a0a4a9fad8e",
+ "note": "refreshed-and-verified", "owner": "matched", "previous_seq": 7,
+ "reap_due_utc": "2026-10-01T05:04:10.200800+00:00", "room": "d-bitflop",
+ "signed_write": "written-and-verified"}
+```
+
+`written-and-verified` is not the server's `200` — `_record_landed()` re-read the room with a
+nonce-specific cache key and found the exact nonce, text and signature it had just sent, which is
+what makes a cached pre-write view unable to masquerade as success.
+
+**The body was then reconstructed here and hashes identically**, so what stands in the room is
+known byte-for-byte from this container, which cannot reach the host. Feeding
+`_maintenance_body()` the state the run read (generation 0, 7 retained records, last seq 7, stamp
+`2026-09-24T05:04Z`) yields 322 characters whose `body_sha256` is
+`42638756ecdc981f524c9d6cf0aa4319db6523dacfebed93df3e3a0a4a9fad8e` — the value the run reported:
+
+```
+[d-bitflop autonomous maintenance | 2026-09-24T05:04Z] verified the fixed owner DID, room
+generation 0, 7 retained records and last sequence 7; refreshed the public DID pointer;
+official-source monitoring remains active. No room instruction, wallet, payment, token
+purchase, key generation or external action was executed.
+```
+
+That closes the loop the manual path needed a human for: the commander approves the body-generating
+*policy* once, and any later run is verifiable after the fact from its reported hash alone, with no
+production read and no trust in the operator's transcription.
+
+**The automation's own record is now four for four** (seq 5, 6, 8 written, and one correct refusal
+at 4.834 days). What failed on 09-19 was never the program — the run at `age_days 4.831` declined
+exactly as written and the run at `5.075` wrote. **What is missing is a scheduler**, and until one
+exists the `send_later` check-in in the commander's session is it. Next mark: **2026-09-29T05:04Z**.
 
 **Device layout fixed the same run, and this is the durable part.** The phone had `flopdid.py`
 in `Documents/` with the identity in `Documents/flop-agent/`, so `_agent_root()` could not reach
@@ -99,15 +137,15 @@ at the cost of two copies that can drift, which is the next tidy-up, not a risk 
 | Permanent DID | **CREATED** `did:key:z6Mk…9QDU` | Generated on the user's iPhone. Validated by upstream `didkey.public_key()`. |
 | Seed backup | **DONE** (user-confirmed) | The one irreversible step, closed. |
 | DID note published | **YES** `/kv/did-64/776f70dbeec8e2` | Durable (notes have no ring). Verified by fetch. |
-| Signed check-in | **DONE; latest seq 7, 2026-09-19** | Every one through the production gate, body hash-checked on the device, canonical bytes decoded from the review screen and compared to the approved body before confirming. |
+| Signed check-in | **DONE; latest seq 8, 2026-09-24 (by the automation)** | Every one through the production gate, body hash-checked on the device, canonical bytes decoded from the review screen and compared to the approved body before confirming. |
 | Signing toolkit | **DONE, and proven on-device** | The phone has no `cryptography`; the pure-Python fallback is what actually runs there. |
 | Testnet | **NOT STARTED** | No official start date. |
 | Miner / validator | Deferred | No specs published. |
 | GitHub contribution | **#417 landed in #433, credited by name** | Finding, verification and test design all shipped. Nothing outstanding. |
 | DID note keepalive | **REFRESHED 2026-09-08T00:39Z; next due ~2026-09-15 — UNVERIFIED since** | Reaped after 7 idle days from the 2026-08-28 publish. `flopwatch.py keepalive --write`, or the ready URL in `technocore/READY-TO-RUN.md` §1. Needs no key. |
 | Owned `d-` room | **CLAIMED `d-bitflop`** 2026-08-30T01:53:29Z | `signed by z6Mk…9QDU`. `/r/d-bitflop` now takes signed writes from our key only. |
-| Room contents | **HELD — 7 messages, seq 1..7, generation 0** (seq 7 written 2026-09-19T03:16:24Z) | Past `STILLBORN_MESSAGES = 1`, so the 24-hour rule can never apply again; only the 7-day idle clock remains. **Seq 1-3 carry no `sig`**, so none of them is offline re-verifiable — upstream stores `rec["sig"]` only when the caller supplies it, and reads the record through to the view unchanged. The owned room's whole point (`HANDOFF.md` §3.1) is a record that verifies from the exported line alone. **Seq 4 was written by a client that supplies the signature to a server that retains it — confirm on the next read that it carries a `sig`, since that is the property the room exists for.** |
-| Room keepalive | **DONE 2026-09-19 (manual); next due ~2026-09-26T03:16Z** | Then one signed write every 7 days, or the room *and* the ownership note go together. Needs the seed. |
+| Room contents | **HELD — 8 messages, seq 1..8, generation 0** (seq 8 written 2026-09-24T05:04:10Z, exact read-back confirmed) | Past `STILLBORN_MESSAGES = 1`, so the 24-hour rule can never apply again; only the 7-day idle clock remains. **Seq 1-3 carry no `sig`**, so none of them is offline re-verifiable — upstream stores `rec["sig"]` only when the caller supplies it, and reads the record through to the view unchanged. The owned room's whole point (`HANDOFF.md` §3.1) is a record that verifies from the exported line alone. **Seq 4 was written by a client that supplies the signature to a server that retains it — confirm on the next read that it carries a `sig`, since that is the property the room exists for.** |
+| Room keepalive | **DONE 2026-09-24 (automation); next mark 2026-09-29T05:04Z, reap 2026-10-01T05:04Z** | Then one signed write every 7 days, or the room *and* the ownership note go together. Needs the seed. |
 | Mailbox (`mb-p-…`) | NOT PUBLISHED | After the room claim. `READY-TO-RUN.md` §3. |
 | Toolkit vs upstream | **RE-VERIFIED 2026-09-19; upstream `e4c4f73` v0.14.0** | 27 commits past `674c2aa`/v0.11.4. `didkey.py` changed only to prepend the leading zero bytes a base58btc key can carry (a DID whose raw key starts `0x00` used to decode short and be rejected); `SIG_PATTERN`, `IDLE_SECONDS = 7*86400` and `STILLBORN_MESSAGES = 1` unchanged. `limit.py normalize_text` still folds case and whitespace but **not digits**, so a maintenance body differing only in numbers is not a duplicate. `selftest_upstream.py` and `rehearse_claim.py d-bitflop` green. |
 | Upstream `#417` (ours) | **still open; `#433` is not on `main`** | `scripts/stdlib_ed25519.py` absent from `origin/main` (only `bench/ed25519_backends.py`). A third party reported on the thread 2026-09-03 that #433 is CONFLICTING with no CI and no review. Nothing owed by us: `CONTRIBUTIONS.md` closed #417 out on 08-28. |
