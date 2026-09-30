@@ -11,8 +11,10 @@ three-factor gate in `flopdid.py` (`technocore/README.md` § Production write ga
 
 | Object | Last write (verified) | Reaped after | Due | Needs |
 |---|---|---|---|---|
-| Room `/r/d-bitflop` + its ownership note | **2026-09-24T05:04:10Z** (seq 8) — written by the automation, exact read-back confirmed | 7 idle days | **2026-10-01T05:04:10Z** (10/01 14:04 JST) | the seed → the phone |
-| DID note `/kv/did-64/776f70dbeec8e2` | **2026-09-24T05:04Z — refreshed AND read back byte-exact** (`"note": "refreshed-and-verified"`) | 7 idle days | **2026-10-01T05:04Z** | public DID only |
+| Room `/r/d-bitflop` + its ownership note | **2026-09-30T02:26:09Z** — an owner-signed record seen by the 09-30T09:51Z run (`latest_signed_utc`); **who wrote it is not yet confirmed**, see below | 7 idle days | **2026-10-07T02:26Z** (10/07 11:26 JST) | the seed → the phone |
+| DID note `/kv/did-64/776f70dbeec8e2` | **2026-09-30T09:51Z — refreshed AND read back byte-exact** | 7 idle days | **2026-10-07T09:51Z** | public DID only |
+
+**2026-09-30 run (operator's phone, ~09:51Z):** `owner: matched`, `note: refreshed-and-verified`, `signed_write: not-due`, `age_days 0.309`, `latest_signed_utc 2026-09-30T02:26:09.906648Z`, `reap_due_utc 2026-10-07T02:26:09Z`. The room is safe and its clock moved a week. **But this run did not write the 02:26:09Z record, and no output for it has been pasted here.** `_read_public_state()` counts only records `from` our DID that carry a `sig`, so that record was signed by our key — either by the operator running the same command on the phone at 11:26 JST without pasting it, or by the other automation path that wrote seq 5 and 6 and has never been located. Asked the operator 2026-09-30. Until answered, the second possibility is treated as open: a copy of the seed may be running somewhere this project does not know about. Next 5-day mark **2026-10-05T02:26Z**; a `send_later` check-in is armed for 02:40Z.
 
 Both clocks now fall on **2026-10-01T05:04Z**, because the automation refreshes the note on
 every run and the run that wrote seq 8 did both. One date to defend, not two.
