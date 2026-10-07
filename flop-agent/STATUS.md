@@ -11,8 +11,10 @@ three-factor gate in `flopdid.py` (`technocore/README.md` § Production write ga
 
 | Object | Last write (verified) | Reaped after | Due | Needs |
 |---|---|---|---|---|
-| Room `/r/d-bitflop` + its ownership note | **2026-09-30T02:26:09Z** — an owner-signed record written by the operator's own run of `autonomous_maintain.py` on the phone (confirmed by the operator 2026-09-30) | 7 idle days | **2026-10-07T02:26Z** (10/07 11:26 JST) | the seed → the phone |
-| DID note `/kv/did-64/776f70dbeec8e2` | **2026-09-30T09:51Z — refreshed AND read back byte-exact** | 7 idle days | **2026-10-07T09:51Z** | public DID only |
+| Room `/r/d-bitflop` + its ownership note | **2026-10-06T03:20:52Z** — owner-signed record seen by the 10-07T15:50Z run (`latest_signed_utc`); writer to be confirmed with the operator (the 09-30 one was theirs) | 7 idle days | **2026-10-13T03:20Z** (10/13 12:20 JST) | the seed → the phone |
+| DID note `/kv/did-64/776f70dbeec8e2` | **2026-10-07T15:50Z — refreshed AND read back byte-exact** | 7 idle days | **2026-10-14T15:50Z** | public DID only |
+
+**2026-10-07 run (operator's phone, ~15:50Z):** `owner: matched`, `note: refreshed-and-verified`, `signed_write: not-due`, `age_days 1.52`, `latest_signed_utc 2026-10-06T03:20:52.517884Z`, `reap_due_utc 2026-10-13T03:20:52Z`. Same shape as 09-30: a write happened (10/06 12:20 JST) whose output was not pasted. Most likely the operator again; asked. Next 5-day mark **2026-10-11T03:20Z**, `send_later` armed for 03:35Z.
 
 **2026-09-30 run (operator's phone, ~09:51Z):** `owner: matched`, `note: refreshed-and-verified`, `signed_write: not-due`, `age_days 0.309`, `latest_signed_utc 2026-09-30T02:26:09.906648Z`, `reap_due_utc 2026-10-07T02:26:09Z`. The room is safe and its clock moved a week. **But this run did not write the 02:26:09Z record, and no output for it has been pasted here.** `_read_public_state()` counts only records `from` our DID that carry a `sig`, so that record was signed by our key — either by the operator running the same command on the phone at 11:26 JST without pasting it, or by the other automation path that wrote seq 5 and 6 and has never been located. **Resolved 2026-09-30: the operator confirmed running the command on the phone at 11:26 JST — the first possibility. No unknown signer.** Its output was not pasted, so that record's body hash was not reproduced here; the later run's `owner: matched` and advanced reap date confirm the write landed. Next 5-day mark **2026-10-05T02:26Z**; a `send_later` check-in is armed for 02:40Z.
 
